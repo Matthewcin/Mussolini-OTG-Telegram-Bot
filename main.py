@@ -8,7 +8,7 @@ from datetime import datetime
 # ==========================================
 
 # 1. TU TOKEN DE TELEGRAM (Cámbialo por el tuyo)
-API_TOKEN = 'TU_TOKEN_AQUI'
+API_TOKEN = '8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc'
 
 # 2. CONEXIÓN A BASE DE DATOS (Extraída de tu archivo subido)
 # Esta es la URL correcta de tu proyecto "royal-glitter" en Neon
@@ -199,4 +199,5 @@ if __name__ == "__main__":
     print("⏳ Conectando a Neon DB...")
     init_db()  # Inicializar tablas
     print("🤖 OTP Bot Iniciado (Esperando mensajes)...")
+
     bot.infinity_polling()
