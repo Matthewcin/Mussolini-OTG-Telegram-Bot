@@ -3,26 +3,25 @@ from database import init_db
 from keep_alive import start_server
 
 # ==========================================
-# 📥 IMPORT HANDLERS (LOGIC)
+# HANDLERS
 # ==========================================
-# We must import these modules so the bot "knows" they exist.
 import handlers.start
 import handlers.admin
 import handlers.callbacks 
 
 # ==========================================
-# 🚀 MAIN EXECUTION
+# MAIN EXECUTION
 # ==========================================
 if __name__ == "__main__":
-    print("⏳ Initializing Systems...")
+    print("Initializing Systems...")
     
-    # 1. Initialize Database
+    # Initialize Database
     init_db()
     
-    # 2. Start Web Server (For Render)
-    # This prevents Render from crashing due to "Port binding error"
+    # Start Web Server (For Render in this Case...)
     start_server()
     
-    # 3. Start Bot Polling
-    print("🤖 Bot is Online and Running...")
+    # 3. Start Bot
+    print("Bot is Online and Running...")
     config.bot.infinity_polling()
+
