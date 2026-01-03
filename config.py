@@ -2,38 +2,45 @@ import os
 import telebot
 from dotenv import load_dotenv
 
-# Cargar .env (solo funciona en local, en Render no hace nada y está bien)
+# Load .env file (only for local testing, Render ignores this)
 load_dotenv()
 
 # ==========================================
-# ⚙️ DIAGNÓSTICO (Esto nos dirá el problema en los logs)
+# ⚙️ DIAGNOSTICS (Logs to verify Render variables)
 # ==========================================
-print("--- INICIANDO CONFIGURACIÓN ---")
+print("--- STARTING CONFIGURATION ---")
 
-# Intentamos obtener el token
 API_TOKEN = os.getenv('API_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Imprimimos en la consola de Render qué encontró (SIN mostrar el token real por seguridad)
-if API_TOKEN is None:
-    print("❌ ERROR FATAL: Render dice que 'API_TOKEN' no existe o está vacío.")
+# Check API TOKEN
+if API_TOKEN:
+    print(f"✅ API_TOKEN found. Length: {len(API_TOKEN)} characters.")
 else:
-    print(f"✅ API_TOKEN encontrado. Longitud: {len(API_TOKEN)} caracteres.")
+    print("❌ FATAL ERROR: API_TOKEN not found in environment variables.")
 
-if DATABASE_URL is None:
-    print("❌ ERROR FATAL: Render dice que 'DATABASE_URL' no existe.")
+# Check DATABASE URL
+if DATABASE_URL:
+    print("✅ DATABASE_URL found.")
 else:
-    print("✅ DATABASE_URL encontrado.")
+    print("❌ FATAL ERROR: DATABASE_URL not found.")
 
-print("--- FIN DIAGNÓSTICO ---")
+print("--- DIAGNOSTICS COMPLETE ---")
 
 # ==========================================
-# ⚙️ INICIALIZACIÓN
+# 🛡️ ADMIN CONFIGURATION
 # ==========================================
+# This is the list of User IDs that can access the Admin Panel.
+# You must include your ID here.
+ADMIN_IDS = [
+    934491540
+]
 
-# Si el token es None, esto fallará aquí, pero ya habremos visto el mensaje de error arriba
+# ==========================================
+# 🤖 BOT INITIALIZATION
+# ==========================================
 if API_TOKEN:
     bot = telebot.TeleBot(API_TOKEN)
 else:
-    # Esto evita el error "NoneType is not iterable" y muestra un error claro
-    raise ValueError("¡Deteniendo bot! Falta la variable de entorno API_TOKEN")
+    # This stops the script immediately if the token is missing
+    raise ValueError("Stopping bot! API_TOKEN environment variable is missing.")
