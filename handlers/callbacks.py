@@ -89,7 +89,6 @@ BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find i
             markup.add(InlineKeyboardButton("⬅ Back to Menu", callback_data="back_home"))
             
             bot.edit_message_text(
-                "**ADMIN DASHBOARD**\n\nSelect an action to execute:",
                 call.message.chat.id, 
                 call.message.message_id, 
                 reply_markup=markup,
@@ -117,7 +116,7 @@ BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find i
                 # Show the key with a Copy Button (Using Markdown code block)
                 bot.send_message(
                     call.message.chat.id, 
-                    f"🟢 **Key Generated**\n\n🔑 Key: `{new_key}`\n⏳ Duration: {days} Days\n\n_Click the key to copy._", 
+                    f"🟢 **Key Generated**\n\n🔑 Key: `{new_key}`\n⏳ Duration: {days} Day/s\n\n_Click the key to copy._", 
                     parse_mode="Markdown"
                 )
                 bot.answer_callback_query(call.id, "Key Created!")
@@ -146,7 +145,7 @@ BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find i
         db_s = "🟢 Online" if conn else "🔴 Offline"
         if conn: conn.close()
         
-        bot.send_message(call.message.chat.id, f"🟢 **System Status:** ONLINE\n🗄 **Database:** {db_s}\n⚡ **Latency:** 24ms", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, f"🟢 **System Status:** ONLINE\n🗄 **Database:** {db_s}\n⚡ **Latency:** Low", parse_mode="Markdown")
 
     # BUY SUBS
     elif call.data == "buy_subs":
