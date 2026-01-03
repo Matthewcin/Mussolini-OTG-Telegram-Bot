@@ -13,7 +13,7 @@ load_dotenv()
 API_TOKEN = os.getenv('8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc')
 
 # Database URL (Neon / Postgres)
-DATABASE_URL = os.getenv('DATABASE_URL')
+DATABASE_URL = os.getenv('postgresql://neondb_owner:npg_1LOXompPCH7U@ep-royal-glitter-acsbyxbr-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require')
 
 # 🛡️ ADMIN IDS CONFIGURATION
 # Add the Telegram IDs of the people who can access the Admin Panel.
