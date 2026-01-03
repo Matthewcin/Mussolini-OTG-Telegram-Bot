@@ -6,7 +6,7 @@ def get_connection():
     try:
         return psycopg2.connect(DATABASE_URL)
     except Exception as e:
-        print(f"❌ Database Error: {e}")
+        print(f"🔴 Database Error: {e}")
         return None
 
 def init_db():
@@ -16,7 +16,7 @@ def init_db():
         try:
             cur = conn.cursor()
             
-            # 1. Users Table
+            # Users Table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
@@ -29,7 +29,7 @@ def init_db():
                 );
             """)
             
-            # 2. Licenses Table
+            # Licenses Table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_licenses (
                     key_code TEXT PRIMARY KEY,
@@ -43,9 +43,9 @@ def init_db():
             conn.commit()
             cur.close()
             conn.close()
-            print("✅ Database connected and tables ready.")
+            print("🟢 Database connected and tables ready.")
         except Exception as e:
-            print(f"❌ Error Initializing DB: {e}")
+            print(f"🔴 Error Initializing DB: {e}")
 
 def register_user(user):
     """Registers or updates a user in the database."""
