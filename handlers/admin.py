@@ -4,7 +4,7 @@ from config import bot, ADMIN_IDS
 from database import get_connection
 
 # ==========================================
-# 🛠️ SYSTEM COMMANDS
+# SYSTEM COMMANDS
 # ==========================================
 
 @bot.message_handler(commands=['version'])
@@ -18,14 +18,14 @@ def cmd_version(message: Message):
     text = (
         "**SYSTEM VERSION INFO**\n"
         "━━━━━━━━━━━━━━━━\n"
-        "⚙️ **Build:** `v1.2.0 (Stable)`\n"
-        "📅 **Last Update:** Jan 2, 2026 // 1:40 GMT-3 (Argentina Time Zone)\n"
+        "⚙️ **Build:** `v1.2.1 (Stable)`\n"
+        "📅 **Last Update:** Jan 2, 2026 // 2:01 GMT-3 (24hr Format + Argentina Time Zone)\n"
         "☁️ **Server:** Render Cloud (Linux CMD Prompt Based)\n"
         "🗄 **Database:** Neon Console (PostgreSQL 16 Based)\n"
         "🐍 **Python:** 3.11+\n"
         "🔐 **Security:** SSL Mode Required\n"
         "━━━━━━━━━━━━━━━━\n"
-        "🗣️ **Note:** Nothing to Say atm :D"
+        "🗣️ **Note:** GUI Almost Finished"
     )
     bot.reply_to(message, text, parse_mode="Markdown")
 
@@ -61,6 +61,7 @@ def cmd_log(message: Message):
 • **GUI & UX Design:** Implemented the "Premium" menu interface with Inline Buttons (Status, Buy, Enter Key).
 • **Keep-Alive Server:** Engineered a Flask micro-server to bypass Render's port binding limitations, ensuring 99.9% Uptime.
 • **License Logic:** Finalized the `Redeem Key` algorithm with date calculation and automatic subscription activation.
+• **Clean Chat:** Implemented a `Chat Cleaner` by Running /clean OR /clear this will DELETE last 30 Messages.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 🟢 **TOTAL STATUS:** CORE SYSTEM DEPLOYED & LIVE.
