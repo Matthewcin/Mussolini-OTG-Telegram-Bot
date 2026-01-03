@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# ⚙️ DIAGNOSTICS (Logs to verify Render variables)
+# DIAGNOSTICS (Logs to verify Render variables)
 # ==========================================
 print("--- STARTING CONFIGURATION ---")
 
@@ -28,16 +28,16 @@ else:
 print("--- DIAGNOSTICS COMPLETE ---")
 
 # ==========================================
-# 🛡️ ADMIN CONFIGURATION
+# ADMIN CONFIGURATION
 # ==========================================
 # This is the list of User IDs that can access the Admin Panel.
 # You must include your ID here.
 ADMIN_IDS = [
-    934491540
+    934491540 (Matthew / VirusNTO)
 ]
 
 # ==========================================
-# 🤖 BOT INITIALIZATION
+# BOT INITIALIZATION
 # ==========================================
 if API_TOKEN:
     bot = telebot.TeleBot(API_TOKEN)
