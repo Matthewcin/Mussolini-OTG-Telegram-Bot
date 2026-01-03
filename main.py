@@ -1,58 +1,49 @@
 import telebot
 import psycopg2
+import os
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from datetime import datetime
+from datetime import datetime, timedelta
+from threading import Thread # NECESARIO PARA RENDER
+from flask import Flask, request # NECESARIO PARA RENDER
 
 # ==========================================
 # ⚙️ CONFIGURACIÓN
 # ==========================================
-
-# 1. TU TOKEN DE TELEGRAM (Cámbialo por el tuyo)
-API_TOKEN = '8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc'
-
-# 2. CONEXIÓN A BASE DE DATOS (Extraída de tu archivo subido)
-# Esta es la URL correcta de tu proyecto "royal-glitter" en Neon
+# IMPORTANTE: Render a veces guarda las variables de entorno en os.environ
+API_TOKEN = '8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc' 
 DATABASE_URL = "postgresql://neondb_owner:npg_1LOXompPCH7U@ep-royal-glitter-acsbyxbr-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require"
 
-# Inicializar Bot
+# ADMIN IDS
+ADMIN_IDS = [934491540]
+
 bot = telebot.TeleBot(API_TOKEN)
 
 # ==========================================
-# 🗄️ LÓGICA DE BASE DE DATOS (POSTGRESQL / NEON)
+# 🗄️ LÓGICA DE BASE DE DATOS
 # ==========================================
-
 def get_connection():
-    """Conecta a Neon DB usando psycopg2"""
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+        return psycopg2.connect(DATABASE_URL)
     except Exception as e:
-        print(f"❌ Error conectando a Neon: {e}")
+        print(f"❌ Error DB: {e}")
         return None
 
 def init_db():
-    """Crea las tablas para el OTP BOT si no existen"""
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
-            
-            # 1. Tabla de USUARIOS (OTP BOT)
-            # Guardamos créditos o fecha de expiración de suscripción
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
                     username TEXT,
                     first_name TEXT,
+                    last_name TEXT,
                     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     subscription_end TIMESTAMP DEFAULT NULL,
-                    is_admin BOOLEAN DEFAULT FALSE,
-                    balance DECIMAL(10, 2) DEFAULT 0.00
+                    is_admin BOOLEAN DEFAULT FALSE
                 );
             """)
-            
-            # 2. Tabla de LICENCIAS (KEYS)
-            # Para vender acceso diario/semanal
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_licenses (
                     key_code TEXT PRIMARY KEY,
@@ -62,88 +53,44 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
-            
             conn.commit()
             cur.close()
             conn.close()
-            print("✅ Base de datos Neon conectada (Royal Glitter) y tablas listas.")
+            print("✅ DB conectada y tablas listas.")
         except Exception as e:
-            print(f"❌ Error DB Init: {e}")
+            print(f"❌ Error Init DB: {e}")
 
-def register_user(user_id, username, first_name):
-    """Registra o actualiza al usuario en la DB"""
+def register_user(user, first_name, last_name, username):
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
             cur.execute("""
-                INSERT INTO otp_users (user_id, username, first_name) 
-                VALUES (%s, %s, %s) 
+                INSERT INTO otp_users (user_id, username, first_name, last_name) 
+                VALUES (%s, %s, %s, %s) 
                 ON CONFLICT (user_id) 
-                DO UPDATE SET username = EXCLUDED.username, first_name = EXCLUDED.first_name;
-            """, (user_id, username, first_name))
+                DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name;
+            """, (user.id, username, first_name, last_name))
             conn.commit()
-            cur.close()
             conn.close()
-            print(f"👤 Usuario {first_name} ({user_id}) registrado/actualizado.")
         except Exception as e:
-            print(f"❌ Error registrando usuario: {e}")
+            print(f"Error registro: {e}")
 
 # ==========================================
-# 🤖 LÓGICA DEL BOT (GUI & HANDLERS)
+# 🤖 COMANDO /START
 # ==========================================
-
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    # 1. Guardar en Base de Datos (Neon)
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    register_user(user_id, username, first_name)
+    user = message.from_user
+    register_user(user, user.first_name, user.last_name, user.username)
 
-    # 2. Texto del mensaje (Estilo BIGFATOTP)
     text = f"""
 BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 
-
- Hello, {first_name}! Welcome to the BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏. This bot is used to subsrice to our spoofcall bot and recieve notifications.
-
-BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find in any other bot.
-
- Our bot is an Hybrid between OTP Bot and 3CX. its a professional Social Engineering kit for professional OTP users.
-
- MODES: Banks, NFCs, Payment Services, Payment Gateways, Brokerages, Stores, Carriers, Emails, Crypto Exchanges, Crypto Hardwares, Social Medias, Cloud Services
-
- Features included:
- 24/7 Support
- Automated Payment System
- Live Panel Feeling
- 12+ Pre-made Modes
- Customizable Caller ID / Spoofing
- 99.99% Up-time
- Customizable Scripts
- Customizable Panel Actions
- International Support
- Multilingual Support (60+ Voices)
- PGP / Conference Calls
- Live DTMF
- Call Streaming - Listen to call in Real-Time!
-
-⤷ Capture Any OTP.
-⤷ Capture Banks OTP.
-⤷ Capture Crypto OTP 
-⤷ Capture Any Pin Code.
-⤷ Capture Any CVV Code
-⤷ Get SSN From Victim.
-⤷ Capture Voice OTP.
-⤷ Get Victim To Approve Message.
-⤷ Capture Any Carrier Pin.
-
+ Hello, {user.first_name}! Welcome... (Resumido para ahorrar espacio)
  DAILY [$50] / WEEKLY [$150] / MONTHLY [$285]
     """
 
-    # 3. Botones (Menu Principal)
     markup = InlineKeyboardMarkup(row_width=2)
-    
     markup.add(
         InlineKeyboardButton("Enter Key", callback_data="enter_key"),
         InlineKeyboardButton("Bot Status", callback_data="bot_status"),
@@ -154,50 +101,135 @@ BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find i
         InlineKeyboardButton("Referral", callback_data="referral"),
         InlineKeyboardButton("Support", callback_data="support")
     )
-    # Panel de Admin abajo del todo
-    markup.add(InlineKeyboardButton("ADMIN PANEL", callback_data="admin_panel"))
+    
+    if user.id in ADMIN_IDS:
+        markup.add(InlineKeyboardButton("🔒 ADMIN PANEL", callback_data="admin_panel"))
 
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
-# --- MANEJADOR DE CLICS EN BOTONES ---
+# ==========================================
+# 🔑 LÓGICA DE REDEEM KEY
+# ==========================================
+def process_key_step(message):
+    key_input = message.text.strip()
+    user = message.from_user
+    user_id = user.id
+    
+    u_username = f"@{user.username}" if user.username else "No Username"
+    u_first = user.first_name if user.first_name else "Unknown"
+    u_last = user.last_name if user.last_name else ""
+    
+    conn = get_connection()
+    valid = False
+    duration = 0
+    
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT duration_days FROM otp_licenses WHERE key_code = %s AND status = 'active'", (key_input,))
+            res = cur.fetchone()
+            
+            if res:
+                valid = True
+                duration = res[0]
+                cur.execute("UPDATE otp_licenses SET status='used', used_by=%s WHERE key_code=%s", (user_id, key_input))
+                new_end_date = datetime.now() + timedelta(days=duration)
+                cur.execute("UPDATE otp_users SET subscription_end=%s WHERE user_id=%s", (new_end_date, user_id))
+                conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error validando key: {e}")
+
+    if valid:
+        bot.reply_to(message, "✅ **Success!**\n\nThanks for Join. Start using our bot Typing /commands")
+    else:
+        error_msg = f"""
+BIGFATOTP - OTP BOT
+ 🟢 Operational | 📈 Uptime: 100%
+ Oops! We have detected you don't have a license.
+
+Username: {u_username}
+First Name: {u_first}
+Last Name: {u_last}
+ID : {user_id}
+• Restart Bot: /start 
+• To Buy Subscription: /buy
+"""
+        bot.reply_to(message, error_msg)
+
+# ==========================================
+# 🖱️ CALLBACKS
+# ==========================================
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
-    # Lógica de "Enter Key"
     if call.data == "enter_key":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "🔑 **Please enter your license key:**\n(Example: `KEY-1234`)", parse_mode="Markdown")
-        # Aquí luego agregaremos el 'register_next_step_handler' para validar la key
-        
-    # Lógica de Estado
+        msg = bot.send_message(call.message.chat.id, "🔑 **LICENSE ACTIVATION**\nEnter key:", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_key_step)
+
     elif call.data == "bot_status":
         bot.answer_callback_query(call.id)
-        # Verificamos conexión DB
-        conn = get_connection()
-        db_status = "🟢 Online" if conn else "🔴 Offline"
-        if conn: conn.close()
-        
-        bot.send_message(call.message.chat.id, f"✅ **System Status:** ONLINE\n📡 **Database:** {db_status}\n⚡ **Latency:** 24ms", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, "✅ **System Status:** ONLINE\n⚡ **Latency:** 24ms", parse_mode="Markdown")
 
-    # Lógica de Precios
     elif call.data == "buy_subs":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "💰 **Prices:**\n- Daily: $50\n- Weekly: $150\n- Monthly: $285\n\nSelect a method below (Crypto).")
+        bot.send_message(call.message.chat.id, "💰 **Prices:**\n- Daily: $50\n- Weekly: $150\n- Monthly: $285")
 
-    # Panel Admin
     elif call.data == "admin_panel":
-        bot.answer_callback_query(call.id, "Checking permissions...")
-        # Aquí verificaremos si user_id == TU_ID
-        bot.send_message(call.message.chat.id, "🔒 **Access Denied.** You are not an admin.")
-
+        if call.from_user.id in ADMIN_IDS:
+            bot.answer_callback_query(call.id, "Welcome Admin!")
+            bot.send_message(call.message.chat.id, "Use /create [days] to generate keys.")
+        else:
+            bot.answer_callback_query(call.id, "⛔ Access Denied")
     else:
-        bot.answer_callback_query(call.id, "Feature coming soon! 🛠️")
+        bot.answer_callback_query(call.id, "Coming soon!")
+
+@bot.message_handler(commands=['create'])
+def create_key(message):
+    if message.from_user.id not in ADMIN_IDS: return
+    try:
+        days = int(message.text.split()[1])
+        import secrets
+        new_key = f"KEY-{secrets.token_hex(4).upper()}"
+        conn = get_connection()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO otp_licenses (key_code, duration_days) VALUES (%s, %s)", (new_key, days))
+            conn.commit()
+            conn.close()
+            bot.reply_to(message, f"✅ Key Created:\n`{new_key}`\nDuration: {days} days", parse_mode="Markdown")
+    except:
+        bot.reply_to(message, "Use: /create [days]")
 
 # ==========================================
-# 🚀 ARRANQUE
+# 🌐 SERVIDOR WEB (PARA RENDER) - ESTO ES LO NUEVO
+# ==========================================
+server = Flask(__name__)
+
+@server.route('/')
+def home():
+    return "Bot is running OK"
+
+def run_web_server():
+    # Render asigna el puerto en la variable de entorno PORT
+    # Si no hay variable, usa 8080 por defecto
+    port = int(os.environ.get("PORT", 8080))
+    server.run(host="0.0.0.0", port=port)
+
+def keep_alive():
+    t = Thread(target=run_web_server)
+    t.start()
+
+# ==========================================
+# 🚀 RUN
 # ==========================================
 if __name__ == "__main__":
-    print("⏳ Conectando a Neon DB...")
-    init_db()  # Inicializar tablas
-    print("🤖 OTP Bot Iniciado (Esperando mensajes)...")
-
+    init_db()
+    
+    # 1. Iniciar el servidor web falso para engañar a Render
+    keep_alive()
+    
+    # 2. Iniciar el bot
+    print("🤖 Bot is running...")
     bot.infinity_polling()
