@@ -40,7 +40,7 @@ def process_key_step(message):
 
     # --- RESPONSES ---
     if valid:
-        bot.reply_to(message, "✅ **Success!**\n\nThanks for Joining. Start using our bot by typing /commands")
+        bot.reply_to(message, "🟢 **Nice!**\n\nThanks for Joining. Start using our bot by typing /commands")
     else:
         # CUSTOM ERROR MESSAGE
         error_msg = f"""
