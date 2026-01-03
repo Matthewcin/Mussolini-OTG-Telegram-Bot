@@ -19,7 +19,7 @@ def callback_query(call):
     # 2. STATUS
     elif call.data == "bot_status":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "✅ **System Status:** ONLINE\n⚡ **Latency:** 24ms", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, "🟢 **System Status:** ONLINE\n⚡ **Latency:** 24ms", parse_mode="Markdown")
 
     # 3. BUY SUBS
     elif call.data == "buy_subs":
@@ -29,7 +29,7 @@ def callback_query(call):
     # 4. ADMIN PANEL
     elif call.data == "admin_panel":
         if call.from_user.id in ADMIN_IDS:
-            bot.answer_callback_query(call.id, "Welcome Admin!")
+            bot.answer_callback_query(call.id, "Admin Mode!")
             bot.send_message(call.message.chat.id, "🕵️ **Admin Panel**\n\nUse `/create [days]` to generate keys.\nExample: `/create 30`", parse_mode="Markdown")
         else:
             bot.answer_callback_query(call.id, "⛔ Access Denied")
