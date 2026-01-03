@@ -18,14 +18,20 @@ def cmd_version(message: Message):
     text = (
         "**SYSTEM VERSION INFO**\n"
         "━━━━━━━━━━━━━━━━\n"
-        "⚙️ **Build:** `v1.2.1 (Stable)`\n"
-        "📅 **Last Update:** Jan 2, 2026 // 2:01 GMT-3 (24hr Format + Argentina Time Zone)\n"
+        "⚙️ **Build:** `v1.2.2 (Stable)`\n"
+        "📅 **Last Update:** Jan 2, 2026 // 2:08 GMT-3 (24hr Format + Argentina Time Zone)\n"
         "☁️ **Server:** Render Cloud (Linux CMD Prompt Based)\n"
         "🗄 **Database:** Neon Console (PostgreSQL 16 Based)\n"
         "🐍 **Python:** 3.11+\n"
         "🔐 **Security:** SSL Mode Required\n"
         "━━━━━━━━━━━━━━━━\n"
-        "🗣️ **Note:** GUI Almost Finished"
+        "🗣️ **Note:** Next Implementations:\n"
+        "• Broadcast System\n"
+        "• Payment Methods (Crypto System) Note: i have one already so i will try to paste it\n"
+        "• Check USER by ID, @Username\n"
+        "• List All the Users who Own a Plan\n"
+        "• List All the Users who DO NOT Own a Plan (This will be Nice to send Custom Broadcasts)\n"
+        "━━━━━━━━━━━━━━━━\n"
     )
     bot.reply_to(message, text, parse_mode="Markdown")
 
