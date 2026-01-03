@@ -57,13 +57,13 @@ BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find i
         InlineKeyboardButton("🪙 ₿uy Plan", callback_data="buy_subs"),
         InlineKeyboardButton("🤖 Commands", callback_data="commands"),
         InlineKeyboardButton("🛠️ Features", callback_data="features"),
-        InlineKeyboardButton("𐦂𖨆𐀪𖠋𐀪𐀪 Community", callback_data="community"),
+        InlineKeyboardButton("🫂 Community", callback_data="community"),
         InlineKeyboardButton("👥 Referral", callback_data="referral"),
         InlineKeyboardButton("⛑️ Support", callback_data="support")
     )
     
     # 🔒 ADMIN PANEL: Only visible if the user ID is in the ADMIN_IDS list
     if user.id in ADMIN_IDS:
-        markup.add(InlineKeyboardButton("🛡️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
+        markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
 
     bot.send_message(message.chat.id, text, reply_markup=markup)
