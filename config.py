@@ -1,13 +1,28 @@
 import os
-from telebot import TeleBot
+import telebot
 from dotenv import load_dotenv
 
+# Load environment variables (for local testing)
 load_dotenv()
 
-# Variables de Configuración
-API_TOKEN = os.getenv('8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc')
-DATABASE_URL = os.getenv('postgresql://neondb_owner:npg_1LOXompPCH7U@ep-royal-glitter-acsbyxbr-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require')
-ADMIN_IDS = [934491540] # Tu ID o lista de IDs
+# ==========================================
+# ⚙️ CONFIGURATION
+# ==========================================
 
-# Inicializamos el bot aquí para poder importarlo en otros archivos
-bot = TeleBot(API_TOKEN)
+# Telegram Bot Token
+API_TOKEN = os.getenv('8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc')
+
+# Database URL (Neon / Postgres)
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+# 🛡️ ADMIN IDS CONFIGURATION
+# Add the Telegram IDs of the people who can access the Admin Panel.
+# Example: ADMIN_IDS = [934491540, 12345678, 98765432]
+ADMIN_IDS = [
+    934491540  # Developer (Matthew / VirusNTO)
+    # 0000000, # Admin 2 (Example)
+    # 0000000, # Admin 3 (Example)
+]
+
+# Initialize Bot Instance
+bot = telebot.TeleBot(API_TOKEN)
