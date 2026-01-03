@@ -32,7 +32,7 @@ print("--- DIAGNOSTICS COMPLETE ---")
 # This is the list of User IDs that can access the Admin Panel.
 # You must include your ID here.
 ADMIN_IDS = [
-    934491540 (Matthew / VirusNTO)
+    934491540 # (Matthew / VirusNTO)
 ]
 
 # ==========================================
