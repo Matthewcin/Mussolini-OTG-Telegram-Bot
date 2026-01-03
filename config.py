@@ -2,27 +2,38 @@ import os
 import telebot
 from dotenv import load_dotenv
 
-# Load environment variables (for local testing)
+# Cargar .env (solo funciona en local, en Render no hace nada y está bien)
 load_dotenv()
 
 # ==========================================
-# ⚙️ CONFIGURATION
+# ⚙️ DIAGNÓSTICO (Esto nos dirá el problema en los logs)
+# ==========================================
+print("--- INICIANDO CONFIGURACIÓN ---")
+
+# Intentamos obtener el token
+API_TOKEN = os.getenv('API_TOKEN')
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Imprimimos en la consola de Render qué encontró (SIN mostrar el token real por seguridad)
+if API_TOKEN is None:
+    print("❌ ERROR FATAL: Render dice que 'API_TOKEN' no existe o está vacío.")
+else:
+    print(f"✅ API_TOKEN encontrado. Longitud: {len(API_TOKEN)} caracteres.")
+
+if DATABASE_URL is None:
+    print("❌ ERROR FATAL: Render dice que 'DATABASE_URL' no existe.")
+else:
+    print("✅ DATABASE_URL encontrado.")
+
+print("--- FIN DIAGNÓSTICO ---")
+
+# ==========================================
+# ⚙️ INICIALIZACIÓN
 # ==========================================
 
-# Telegram Bot Token
-API_TOKEN = os.getenv('8527602486:AAE1P1COCYidG7oyjMWANvTMfjfVql2wtJc')
-
-# Database URL (Neon / Postgres)
-DATABASE_URL = os.getenv('postgresql://neondb_owner:npg_1LOXompPCH7U@ep-royal-glitter-acsbyxbr-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require')
-
-# 🛡️ ADMIN IDS CONFIGURATION
-# Add the Telegram IDs of the people who can access the Admin Panel.
-# Example: ADMIN_IDS = [934491540, 12345678, 98765432]
-ADMIN_IDS = [
-    934491540  # Developer (Matthew / VirusNTO)
-    # 0000000, # Admin 2 (Example)
-    # 0000000, # Admin 3 (Example)
-]
-
-# Initialize Bot Instance
-bot = telebot.TeleBot(API_TOKEN)
+# Si el token es None, esto fallará aquí, pero ya habremos visto el mensaje de error arriba
+if API_TOKEN:
+    bot = telebot.TeleBot(API_TOKEN)
+else:
+    # Esto evita el error "NoneType is not iterable" y muestra un error claro
+    raise ValueError("¡Deteniendo bot! Falta la variable de entorno API_TOKEN")
