@@ -20,6 +20,12 @@ PLANS = {
         "title": "Monthly License",
         "price": 285.00,
         "days": 30
+    },
+    # PLAN DE PRUEBA (SOLO PARA TI)
+    "dev_test": {
+        "title": "Developer Test",
+        "price": 1.00, 
+        "days": 1
     }
 }
 
@@ -34,7 +40,7 @@ def create_hoodpay_payment(chat_id, plan_type):
     plan = PLANS.get(plan_type)
     if not plan: return
 
-    # Hoodpay API Endpoint (Verifica en la doc de Hoodpay si es v1 o v2)
+    # Hoodpay API Endpoint
     url = "https://api.hoodpay.io/v1/payments"
     
     headers = {
@@ -43,13 +49,13 @@ def create_hoodpay_payment(chat_id, plan_type):
     }
 
     # Payload para crear el pago
-    # Enviamos user_id y plan_type en 'metadata' para recuperarlos luego en el webhook
     payload = {
         "amount": plan["price"],
         "currency": "USD",
         "description": f"BIGFATOTP - {plan['title']}",
-        "redirect_url": "https://t.me/MussoliniIOTPBot", # A donde vuelven tras pagar
-        "webhook_url": f"{WEBHOOK_BASE_URL}/hoodpay/webhook", # Donde Hoodpay nos avisa
+        "redirect_url": "https://t.me/MussoliniIOTPBot", 
+        # CORRECCION AQUI: Usamos la ruta que tienes en la foto
+        "webhook_url": f"{WEBHOOK_BASE_URL}/webhook/hoodpay", 
         "metadata": {
             "user_id": chat_id,
             "plan_type": plan_type
@@ -61,24 +67,24 @@ def create_hoodpay_payment(chat_id, plan_type):
         data = response.json()
 
         if response.status_code in [200, 201] and "data" in data:
-            checkout_url = data["data"]["url"] # Ajusta según la respuesta real de Hoodpay
+            checkout_url = data["data"]["url"] 
             
             # Crear botón con el link
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("💸 Pay Now (Hoodpay)", url=checkout_url))
+            markup.add(InlineKeyboardButton(f"💸 Pay ${plan['price']} (Hoodpay)", url=checkout_url))
             
             bot.send_message(
                 chat_id,
                 f"💳 **Purchase: {plan['title']}**\n"
                 f"💵 Amount: ${plan['price']} USD\n\n"
                 f"Click the button below to pay securely via Hoodpay.\n"
-                f"Your access will be active automatically after payment.",
+                f"**Note:** Crypto/Card payments may take a few minutes to confirm.",
                 reply_markup=markup,
                 parse_mode="Markdown"
             )
         else:
-            print(f"Hoodpay Error: {data}")
-            bot.send_message(chat_id, "⚠️ Error generating payment link. Please contact Admin.")
+            print(f"🔴 Hoodpay API Error: {data}")
+            bot.send_message(chat_id, f"⚠️ Error generating payment link.\nDebug: `{data}`", parse_mode="Markdown")
             
     except Exception as e:
         print(f"Exception creating payment: {e}")
