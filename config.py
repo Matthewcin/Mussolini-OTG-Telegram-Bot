@@ -5,35 +5,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# DIAGNOSTICS (Logs In case that Any UPDATE is Wrong...)
+# DIAGNOSTICS
 # ==========================================
 print("--- STARTING Config.py ---")
 
 API_TOKEN = os.getenv('API_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Check API TOKEN
-if API_TOKEN:
-    print(f"🟢 API_TOKEN found. Length: {len(API_TOKEN)} characters.")
-else:
-    print("🔴 FATAL ERROR: API_TOKEN not found in environment variables.")
+# HOODPAY CONFIGURATION
+HOODPAY_MERCHANT_ID = os.getenv('HOODPAY_MERCHANT_ID')
+HOODPAY_API_TOKEN = os.getenv('HOODPAY_API_TOKEN')
+# Esta URL debe ser la de tu proyecto en Render (ej: https://mussolini-bot.onrender.com)
+# Es necesaria para decirle a Hoodpay donde avisar.
+WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL') 
 
-# Check DATABASE URL
-if DATABASE_URL:
-    print("🟢 DATABASE_URL found.")
+if API_TOKEN:
+    print(f"🟢 API_TOKEN found.")
 else:
-    print("🔴 FATAL ERROR: DATABASE_URL not found.")
+    print("🔴 FATAL ERROR: API_TOKEN missing.")
+
+if HOODPAY_API_TOKEN and HOODPAY_MERCHANT_ID:
+    print("🟢 HOODPAY Credentials found.")
+else:
+    print("🟠 WARNING: HOODPAY Credentials missing. Payments won't work.")
 
 print("--- DIAGNOSTICS COMPLETE ---")
 
 # ==========================================
 # ADMIN CONFIGURATION
 # ==========================================
-# This is the list of User IDs that can access the Admin Panel.
-# You must include your ID here.
 ADMIN_IDS = [
-    934491540, # (Matthew / VirusNTO) <-- Bot Maker
-    7294894666 # (Mussolini) <-- Owner
+    934491540, 
+    7294894666 
 ]
 
 # ==========================================
@@ -42,5 +45,4 @@ ADMIN_IDS = [
 if API_TOKEN:
     bot = telebot.TeleBot(API_TOKEN)
 else:
-    # This stops the script immediately if the token is missing
-    raise ValueError("Stopping bot! API_TOKEN environment variable is missing.")
+    raise ValueError("Stopping bot! API_TOKEN is missing.")
