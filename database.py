@@ -1,5 +1,6 @@
 import psycopg2
 from config import DATABASE_URL
+from datetime import datetime, timedelta
 
 def get_connection():
     """Establishes connection to Neon DB."""
@@ -63,3 +64,37 @@ def register_user(user):
             conn.close()
         except Exception as e:
             print(f"Registration Error: {e}")
+
+# ESTA ES LA FUNCIÓN QUE FALTABA Y CAUSABA EL ERROR
+def add_subscription_days(user_id, days):
+    """Adds subscription time to a user (used by Payments & Keys)."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            
+            # 1. Check current subscription status
+            cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            
+            current_end = result[0] if result else None
+            now = datetime.now()
+            
+            # 2. Calculate new end date
+            if current_end and current_end > now:
+                # User has active time, add to existing
+                new_end = current_end + timedelta(days=days)
+            else:
+                # User is expired or new, start from NOW
+                new_end = now + timedelta(days=days)
+            
+            # 3. Update DB
+            cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return True, new_end
+        except Exception as e:
+            print(f"Subscription Update Error: {e}")
+            return False, None
+    return False, None
