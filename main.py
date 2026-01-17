@@ -1,43 +1,45 @@
-import config
+import time
+import logging
+from config import bot
 from database import init_db
 from keep_alive import start_server
-# Importamos el bot desde config para poder manipularlo
-from config import bot 
 
-# ==========================================
-# IMPORT HANDLERS
-# ==========================================
+# Importamos los handlers para que el bot sepa qué hacer
 import handlers.start
+import handlers.callbacks
+import handlers.payments 
 import handlers.admin
 import handlers.keys
-import handlers.callbacks
-import handlers.utils
-import handlers.payments 
+# (Asegúrate de importar todos tus handlers aquí)
 
-# ==========================================
-# MAIN EXECUTION
-# ==========================================
+# Configurar logs para ver qué pasa en la consola de Render
+logging.basicConfig(level=logging.INFO)
+
 if __name__ == "__main__":
-    print("1/4 Initializing Render ...")
-    
-    # --- BLINDAJE ANTI-CONFLICTO ---
-    try:
-        print("🧹 Eliminando Webhooks viejos...")
-        bot.remove_webhook() # Forzamos a Telegram a olvidar el Webhook
-        import time
-        time.sleep(1) # Le damos un respiro de 1 segundo
-    except Exception as e:
-        print(f"⚠️ Warning limpiando webhook: {e}")
-    # -------------------------------
+    print("🚀 INICIANDO SISTEMA...")
 
-    print("2/4 Initializing Neon Console (Database) ...")
+    # 1. Base de Datos
+    print("--- 1. Conectando DB ---")
     init_db()
-    
-    print("3/4 Initializing Web Server (Hoodpay Listener) ...")
-    start_server()
-    
-    print("🟢 All Good - Bot is Online and Running...")
-    
-    # Usamos allowed_updates para ahorrar datos y evitar conflictos raros
-    bot.infinity_polling(skip_pending=True, allowed_updates=["message", "callback_query", "pre_checkout_query", "successful_payment"])
 
+    # 2. Servidor Web (Para escuchar a Hoodpay)
+    print("--- 2. Arrancando Servidor Web (Flask) ---")
+    start_server()
+
+    # 3. LIMPIEZA DE CONEXIONES (EL ARREGLO MÁGICO)
+    # Esto borra cualquier webhook viejo que esté bloqueando el chat
+    print("--- 3. Limpiando Webhooks Viejos ---")
+    try:
+        bot.remove_webhook()
+        time.sleep(1) # Damos un respiro a la API
+        print("✅ Webhook eliminado correctamente.")
+    except Exception as e:
+        print(f"⚠️ Advertencia borrando webhook: {e}")
+
+    # 4. Arrancar el Bot
+    print("--- 4. Bot Escuchando (Polling) ---")
+    try:
+        # allowed_updates ayuda a filtrar basura y reduce conflictos
+        bot.infinity_polling(skip_pending=True, allowed_updates=["message", "callback_query"])
+    except Exception as e:
+        print(f"❌ ERROR CRÍTICO EN POLLING: {e}")
