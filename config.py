@@ -15,9 +15,12 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 # HOODPAY CONFIGURATION
 HOODPAY_MERCHANT_ID = os.getenv('HOODPAY_MERCHANT_ID')
 HOODPAY_API_TOKEN = os.getenv('HOODPAY_API_TOKEN')
-# Esta URL debe ser la de tu proyecto en Render (ej: https://mussolini-bot.onrender.com)
-# Es necesaria para decirle a Hoodpay donde avisar.
 WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL') 
+
+# WEBHOOK LOG CONFIGURATION
+
+LOG_BOT_TOKEN = os.getenv('LOG_BOT_TOKEN')    # Token
+LOG_CHANNEL_ID = os.getenv('LOG_CHANNEL_ID')  # Channel ID
 
 if API_TOKEN:
     print(f"🟢 API_TOKEN found.")
