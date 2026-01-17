@@ -1,8 +1,8 @@
 import requests
 import json
-import traceback # Para ver la línea exacta donde falla
+import traceback
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import bot, HOODPAY_API_TOKEN, WEBHOOK_BASE_URL
+from config import bot, HOODPAY_API_TOKEN, HOODPAY_MERCHANT_ID, WEBHOOK_BASE_URL
 
 # ==========================================
 # PAYMENT CONFIGURATION
@@ -23,7 +23,6 @@ PLANS = {
         "price": 285.00,
         "days": 30
     },
-    # Mantenemos el plan de prueba de $1
     "dev_test": {
         "title": "Developer Test",
         "price": 1.00, 
@@ -33,31 +32,32 @@ PLANS = {
 
 def create_hoodpay_payment(chat_id, plan_type):
     """
-    Genera un link de Hoodpay y, si falla, ENVÍA EL LOG DE ERROR AL CHAT.
+    Genera un link de Hoodpay usando la URL específica del negocio.
     """
     
-    # 1. LOG: Verificamos variables antes de empezar
+    # 1. Verificaciones de Seguridad
     if not HOODPAY_API_TOKEN:
-        bot.send_message(chat_id, "🚫 **Error Crítico:** Falta `HOODPAY_API_TOKEN` en las variables de entorno.")
+        bot.send_message(chat_id, "🚫 **Error:** Falta `HOODPAY_API_TOKEN`.")
         return
-    if not WEBHOOK_BASE_URL:
-        bot.send_message(chat_id, "🚫 **Error Crítico:** Falta `WEBHOOK_BASE_URL` en las variables de entorno.")
+    if not HOODPAY_MERCHANT_ID:
+        bot.send_message(chat_id, "🚫 **Error:** Falta `HOODPAY_MERCHANT_ID` (16481).")
         return
 
     plan = PLANS.get(plan_type)
     if not plan: 
-        bot.send_message(chat_id, f"🚫 **Error:** El plan `{plan_type}` no está definido en el código.")
+        bot.send_message(chat_id, f"🚫 **Error:** El plan `{plan_type}` no existe.")
         return
 
-    # 2. Preparamos la petición
-    url = "https://api.hoodpay.io/v1/payments"
+    # 2. LA URL CORRECTA (Aquí estaba el problema antes)
+    # Usamos el ID (16481) que tienes en config.py para construir la URL
+    url = f"https://api.hoodpay.io/v1/businesses/{HOODPAY_MERCHANT_ID}/payments"
     
     headers = {
         "Authorization": f"Bearer {HOODPAY_API_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    # Aquí definimos la URL del webhook igual que en tu panel
+    # URL donde Hoodpay nos avisará cuando paguen
     webhook_target = f"{WEBHOOK_BASE_URL}/webhook/hoodpay"
 
     payload = {
@@ -72,21 +72,20 @@ def create_hoodpay_payment(chat_id, plan_type):
         }
     }
 
-    bot.send_message(chat_id, f"⚙️ **Iniciando solicitud a Hoodpay...**\nTarget: `{webhook_target}`", parse_mode="Markdown")
+    bot.send_message(chat_id, "⚙️ **Conectando con Hoodpay...**", parse_mode="Markdown")
 
     try:
-        # 3. Intentamos conectar
+        # 3. Petición
         response = requests.post(url, json=payload, headers=headers, timeout=15)
         
-        # 4. Analizamos la respuesta
+        # 4. Procesar Respuesta
         try:
             data = response.json()
         except json.JSONDecodeError:
-            # Si Hoodpay devuelve HTML (error 500 o 404 del servidor de ellos)
-            bot.send_message(chat_id, f"⚠️ **Hoodpay devolvió algo que no es JSON:**\nStatus: {response.status_code}\nTexto: `{response.text[:200]}`", parse_mode="Markdown")
+            bot.send_message(chat_id, f"⚠️ **Error No-JSON:** Status {response.status_code}\n`{response.text[:200]}`", parse_mode="Markdown")
             return
 
-        # 5. ÉXITO (Código 200 o 201 y existe "data")
+        # 5. Verificar Éxito (Hoodpay v1 suele devolver 'data' -> 'url')
         if response.status_code in [200, 201] and "data" in data and "url" in data["data"]:
             checkout_url = data["data"]["url"] 
             
@@ -95,33 +94,20 @@ def create_hoodpay_payment(chat_id, plan_type):
             
             bot.send_message(
                 chat_id,
-                f"✅ **Link Generado**\n"
+                f"✅ **Link de Pago Creado**\n"
                 f"Plan: {plan['title']}\n"
-                f"Link: [Click Aquí]({checkout_url})",
+                f"Precio: ${plan['price']}\n\n"
+                f"Haz clic abajo para pagar con Crypto/Tarjeta.",
                 reply_markup=markup,
                 parse_mode="Markdown"
             )
             
-        # 6. FALLO DE API (Hoodpay dice que no)
         else:
-            # Convertimos el JSON de error a texto bonito
-            error_details = json.dumps(data, indent=2)
-            bot.send_message(
-                chat_id, 
-                f"❌ **Hoodpay rechazó la compra:**\n"
-                f"Status Code: `{response.status_code}`\n"
-                f"Respuesta:\n```json\n{error_details}\n```", 
-                parse_mode="Markdown"
-            )
+            # Si falla, mostramos por qué (ej: Token inválido)
+            error_msg = json.dumps(data, indent=2)
+            bot.send_message(chat_id, f"❌ **Hoodpay Rechazó:**\nStatus: {response.status_code}\n```json\n{error_msg}\n```", parse_mode="Markdown")
 
     except Exception as e:
-        # 7. FALLO DE PYTHON (Librerías, Conexión, etc.)
         tb = traceback.format_exc()
-        print(f"ERROR EN PAYMENTS: {tb}") # Esto va al log de Render
-        bot.send_message(
-            chat_id, 
-            f"☠️ **Error Interno del Bot:**\n"
-            f"Tipo: `{type(e).__name__}`\n"
-            f"Mensaje: `{str(e)}`",
-            parse_mode="Markdown"
-        )
+        print(f"ERROR PAYMENTS: {tb}")
+        bot.send_message(chat_id, f"☠️ **Error de Conexión:** `{str(e)}`", parse_mode="Markdown")
