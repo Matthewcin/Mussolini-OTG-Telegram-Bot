@@ -20,12 +20,15 @@ import handlers.payments
 if __name__ == "__main__":
     print("1/4 Initializing Render ...")
     
-    # PASO CRITICO: Matar cualquier webhook previo para evitar conflictos
+    # --- BLINDAJE ANTI-CONFLICTO ---
     try:
-        print("🧹 Cleaning previous Webhooks/Sessions...")
-        bot.delete_webhook(drop_pending_updates=True)
+        print("🧹 Eliminando Webhooks viejos...")
+        bot.remove_webhook() # Forzamos a Telegram a olvidar el Webhook
+        import time
+        time.sleep(1) # Le damos un respiro de 1 segundo
     except Exception as e:
-        print(f"⚠️ Webhook cleanup warning: {e}")
+        print(f"⚠️ Warning limpiando webhook: {e}")
+    # -------------------------------
 
     print("2/4 Initializing Neon Console (Database) ...")
     init_db()
@@ -37,3 +40,4 @@ if __name__ == "__main__":
     
     # Usamos allowed_updates para ahorrar datos y evitar conflictos raros
     bot.infinity_polling(skip_pending=True, allowed_updates=["message", "callback_query", "pre_checkout_query", "successful_payment"])
+
