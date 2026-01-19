@@ -22,6 +22,12 @@ WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL')
 LOG_BOT_TOKEN = os.getenv('LOG_BOT_TOKEN')    # Token
 LOG_CHANNEL_ID = os.getenv('LOG_CHANNEL_ID')  # Channel ID
 
+# TWILIO CONFIGURATION (EL MOTOR DE LLAMADAS)
+TWILIO_SID = os.getenv('TWILIO_SID')
+TWILIO_TOKEN = os.getenv('TWILIO_TOKEN')
+TWILIO_NUMBER = os.getenv('TWILIO_NUMBER') # Tu número comprado en Twilio
+TWILIO_APP_URL = os.getenv('WEBHOOK_BASE_URL') # Usamos la misma URL base de Render
+
 if API_TOKEN:
     print(f"🟢 API_TOKEN found.")
 else:
