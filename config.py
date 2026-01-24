@@ -4,53 +4,38 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==========================================
-# DIAGNOSTICS
-# ==========================================
 print("--- STARTING Config.py ---")
 
+# BOT PRINCIPAL
 API_TOKEN = os.getenv('API_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# HOODPAY CONFIGURATION
+# HOODPAY
 HOODPAY_MERCHANT_ID = os.getenv('HOODPAY_MERCHANT_ID')
 HOODPAY_API_TOKEN = os.getenv('HOODPAY_API_TOKEN')
 WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL') 
 
-# WEBHOOK LOG CONFIGURATION
+# LOGS (BOT SECUNDARIO)
+LOG_BOT_TOKEN = os.getenv('LOG_BOT_TOKEN')    
+LOG_CHANNEL_ID = os.getenv('LOG_CHANNEL_ID')  
 
-LOG_BOT_TOKEN = os.getenv('LOG_BOT_TOKEN')    # Token
-LOG_CHANNEL_ID = os.getenv('LOG_CHANNEL_ID')  # Channel ID
-
-# TWILIO CONFIGURATION (EL MOTOR DE LLAMADAS)
+# TWILIO (LLAMADAS)
 TWILIO_SID = os.getenv('TWILIO_SID')
 TWILIO_TOKEN = os.getenv('TWILIO_TOKEN')
-TWILIO_NUMBER = os.getenv('TWILIO_NUMBER') # Tu número comprado en Twilio
-TWILIO_APP_URL = os.getenv('WEBHOOK_BASE_URL') # Usamos la misma URL base de Render
+TWILIO_NUMBER = os.getenv('TWILIO_NUMBER') 
+TWILIO_APP_URL = os.getenv('WEBHOOK_BASE_URL')
 
-if API_TOKEN:
-    print(f"🟢 API_TOKEN found.")
-else:
-    print("🔴 FATAL ERROR: API_TOKEN missing.")
+# DIAGNOSTICO
+if API_TOKEN: print(f"🟢 API_TOKEN found.")
+else: print("🔴 FATAL ERROR: API_TOKEN missing.")
 
-if HOODPAY_API_TOKEN and HOODPAY_MERCHANT_ID:
-    print("🟢 HOODPAY Credentials found.")
-else:
-    print("🟠 WARNING: HOODPAY Credentials missing. Payments won't work.")
-
-print("--- DIAGNOSTICS COMPLETE ---")
-
-# ==========================================
-# ADMIN CONFIGURATION
-# ==========================================
+# ADMIN IDS (¡IMPORTANTE! Pon aquí tu ID numérico real)
 ADMIN_IDS = [
     934491540, 
-    7294894666 
+    7294894666
 ]
 
-# ==========================================
-# BOT INITIALIZATION
-# ==========================================
+# INICIALIZAR BOT
 if API_TOKEN:
     bot = telebot.TeleBot(API_TOKEN)
 else:
