@@ -9,10 +9,7 @@ def send_welcome(message):
 
     text = f"""
 BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏
-Hello, {user.first_name}! Welcome to the professional Social Engineering kit.
-
-MODES: Banks, Crypto, Social Media.
-STATUS: Online 🟢
+Hello, {user.first_name}! Welcome to Mussolini OTP Bot.
 
 Select an option below:
     """
