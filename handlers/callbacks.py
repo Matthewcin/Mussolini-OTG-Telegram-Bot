@@ -3,183 +3,61 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import bot, ADMIN_IDS
 from database import get_connection
 from handlers.keys import process_key_step
-# Importamos la función de pagos de Hoodpay (Asegúrate de tener handlers/payments.py creado)
 from handlers.payments import create_hoodpay_payment
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
     
-    # ==========================================
-    # MAIN MENU & NAVIGATION
-    # ==========================================
-    
-    # 🔙 BACK TO MAIN MENU (Re-uses the /start layout but edits the message)
     if call.data == "back_home":
-        text = f"""
-BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 (EXAMPLE TEXT)
+        # Redirigimos al start (puedes copiar el markup de start.py aqui)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, "🏠 Menu reload: /start")
 
- Hello, Config Cloud - Matthew! Welcome to the BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏. This bot is used to subsrice to our spoofcall bot and recieve notifications.
-
-BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏 have UNIQUE features that you can't find in any other bot.
-
- Our bot is an Hybrid between OTP Bot and 3CX. its a professional Social Engineering kit for professional OTP users.
-
- MODES: Banks, NFCs, Payment Services, Payment Gateways, Brokerages, Stores, Carriers, Emails, Crypto Exchanges, Crypto Hardwares, Social Medias, Cloud Services
-
- Features included:
- 24/7 Support
- Automated Payment System
- Live Panel Feeling
- 12+ Pre-made Modes
- Customizable Caller ID / Spoofing
- 99.99% Up-time
- Customizable Scripts
- Customizable Panel Actions
- International Support
- Multilingual Support (60+ Voices)
- PGP / Conference Calls
- Live DTMF
- Call Streaming - Listen to call in Real-Time!
-
-⤷ Capture Any OTP.
-⤷ Capture Banks OTP.
-⤷ Capture Crypto OTP 
-⤷ Capture Any Pin Code.
-⤷ Capture Any CVV Code
-⤷ Get SSN From Victim.
-⤷ Capture Voice OTP.
-⤷ Get Victim To Approve Message.
-⤷ Capture Any Carrier Pin.
-
- DAILY [$50] / WEEKLY [$150] / MONTHLY [$285]
-        """
-        markup = InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            InlineKeyboardButton("🎟️ Enter Key", callback_data="enter_key"),
-            InlineKeyboardButton("🚦 Bot Status", callback_data="bot_status"),
-            InlineKeyboardButton("🪙 Buy Plan", callback_data="buy_subs"),
-            InlineKeyboardButton("🤖 Commands", callback_data="commands"),
-            InlineKeyboardButton("🛠️ Features", callback_data="features"),
-            InlineKeyboardButton("🫂 Community", callback_data="community"),
-            InlineKeyboardButton("👥 Referral", callback_data="referral"),
-            InlineKeyboardButton("⛑️ Support", callback_data="support")
-        )
-        if user_id in ADMIN_IDS:
-            markup.add(InlineKeyboardButton("🕴️ ADMIN PANEL", callback_data="admin_panel"))
-            
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
-
-    # ==========================================
-    # ADMIN PANEL DASHBOARD
-    # ==========================================
+    # ADMIN PANEL
     elif call.data == "admin_panel":
         if user_id in ADMIN_IDS:
             markup = InlineKeyboardMarkup()
-            # Row 1: Quick Keys
-            markup.row(
-                InlineKeyboardButton("🔑 1 Day (+50 USD)", callback_data="gen_1"),
-                InlineKeyboardButton("🔑 1 Week (+150 USD)", callback_data="gen_7"),
-                InlineKeyboardButton("🔑 1 Month (+285 USD)", callback_data="gen_30")
-            )
-            # Row 2: Tools
-            markup.row(
-                InlineKeyboardButton("📜 System Log", callback_data="show_log"),
-                InlineKeyboardButton("ℹ️ Version", callback_data="show_version")
-            )
-            # Row 3: Back
-            markup.add(InlineKeyboardButton("⬅ Back to Menu", callback_data="back_home"))
-            
-            bot.edit_message_text(
-                call.message.chat.id, 
-                call.message.message_id, 
-                reply_markup=markup,
-                parse_mode="Markdown"
-            )
+            markup.row(InlineKeyboardButton("🔑 1 Day", callback_data="gen_1"), InlineKeyboardButton("🔑 1 Week", callback_data="gen_7"))
+            markup.row(InlineKeyboardButton("📜 Logs", callback_data="show_log"), InlineKeyboardButton("ℹ️ Version", callback_data="show_version"))
+            bot.edit_message_text("🕴️ **ADMIN CONTROL**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
         else:
             bot.answer_callback_query(call.id, "⛔ Access Denied")
 
-    # ADMIN ACTIONS (KEYS GENERATION)
+    # GENERAR KEYS
     elif call.data.startswith("gen_"):
         if user_id not in ADMIN_IDS: return
-        
-        days = int(call.data.split("_")[1]) # Extracts 1, 7 or 30
+        days = int(call.data.split("_")[1])
         new_key = f"KEY-{secrets.token_hex(4).upper()}"
-        
         conn = get_connection()
-        if conn:
-            try:
-                cur = conn.cursor()
-                cur.execute("INSERT INTO otp_licenses (key_code, duration_days) VALUES (%s, %s)", (new_key, days))
-                conn.commit()
-                cur.close()
-                conn.close()
-                
-                # Show the key with a Copy Button (Using Markdown code block)
-                bot.send_message(
-                    call.message.chat.id, 
-                    f"🟢 **Key Generated**\n\n🔑 Key: `{new_key}`\n⏳ Duration: {days} Day/s\n\n_Click the key to copy._", 
-                    parse_mode="Markdown"
-                )
-                bot.answer_callback_query(call.id, "Key Created!")
-            except Exception as e:
-                bot.send_message(call.message.chat.id, f"🔴 Error: {e}")
+        cur = conn.cursor()
+        cur.execute("INSERT INTO otp_licenses (key_code, duration_days) VALUES (%s, %s)", (new_key, days))
+        conn.commit()
+        conn.close()
+        bot.send_message(call.message.chat.id, f"✅ Key: `{new_key}` ({days}d)", parse_mode="Markdown")
 
-    # ==========================================
-    # USER ACTIONS
-    # ==========================================
+    # MENUS DE INFO
+    elif call.data == "commands":
+        bot.edit_message_text("🤖 **Commands:**\n/start\n/call [num] [service]\n/buy", call.message.chat.id, call.message.message_id)
     
-    # ENTER KEY
-    elif call.data == "enter_key":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(
-            call.message.chat.id, 
-            "🎟️ **LICENSE ACTIVATION**\n\nPlease enter your access key below.\nFormat example: `KEY-XXXX-YYYY`", 
-            parse_mode="Markdown"
-        )
-        bot.register_next_step_handler(msg, process_key_step)
+    elif call.data == "features":
+        bot.edit_message_text("🛠️ **Features:**\n- Twilio Voice\n- Hoodpay", call.message.chat.id, call.message.message_id)
 
-    # STATUS
-    elif call.data == "bot_status":
-        bot.answer_callback_query(call.id)
-        # Check DB status roughly
-        conn = get_connection()
-        db_s = "🟢 Online" if conn else "🔴 Offline"
-        if conn: conn.close()
-        
-        bot.send_message(call.message.chat.id, f"🟢 **System Status:** ONLINE\n🗄 **Database:** {db_s}\n⚡ **Latency:** Low", parse_mode="Markdown")
-
-    # BUY SUBS (MENU SELECTION)
     elif call.data == "buy_subs":
-        bot.answer_callback_query(call.id)
-        
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📅 1 Day Access ($50)", callback_data="pay_daily"))
-        markup.add(InlineKeyboardButton("🗓 1 Week Access ($150)", callback_data="pay_weekly"))
-        markup.add(InlineKeyboardButton("📆 1 Month Access ($285)", callback_data="pay_monthly"))
-        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-        
-        bot.edit_message_text(
-            "💳 **SELECT A SUBSCRIPTION PLAN**\n\nSecure payment via **Hoodpay** (Crypto/Cards).\nAccess is automatic immediately after payment.",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
+        markup.add(InlineKeyboardButton("📅 1 Day ($50)", callback_data="pay_daily"))
+        markup.add(InlineKeyboardButton("🗓 1 Week ($150)", callback_data="pay_weekly"))
+        markup.add(InlineKeyboardButton("📆 1 Month ($285)", callback_data="pay_monthly"))
+        bot.edit_message_text("💳 **Select Plan:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
-    # PAYMENT TRIGGERS (Redirect to handlers/payments.py logic)
-    elif call.data == "pay_daily":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        create_hoodpay_payment(call.message.chat.id, "daily")
-        
-    elif call.data == "pay_weekly":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        create_hoodpay_payment(call.message.chat.id, "weekly")
-        
-    elif call.data == "pay_monthly":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        create_hoodpay_payment(call.message.chat.id, "monthly")
+    elif call.data in ["pay_daily", "pay_weekly", "pay_monthly", "pay_dev_test"]:
+        plan = call.data.split("_")[1]
+        if "dev" in call.data: plan = "dev_test"
+        create_hoodpay_payment(call.message.chat.id, plan)
 
-    # PLACEHOLDERS
+    elif call.data == "enter_key":
+        msg = bot.send_message(call.message.chat.id, "🎟️ Send Key:")
+        bot.register_next_step_handler(msg, process_key_step)
+        
     else:
-        bot.answer_callback_query(call.id, "Coming soon!")
+        bot.answer_callback_query(call.id, "Coming soon")
