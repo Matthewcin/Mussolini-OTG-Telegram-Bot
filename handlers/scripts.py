@@ -2,39 +2,38 @@ from telebot.types import Message
 from config import bot
 from database import save_user_script, get_all_user_scripts, delete_user_script, check_subscription
 
-# Lista de idiomas soportados por Twilio (Voces Neurales)
-# Esto asegura que la "traducción" tenga acento nativo
+# Supported Languages (Neural TTS)
 LANGUAGES = {
-    "en": "en-US",    # Inglés (Alice)
-    "es": "es-MX",    # Español Latino (México)
-    "es-es": "es-ES", # Español España
-    "pt": "pt-BR",    # Portugués Brasil
-    "fr": "fr-FR",    # Francés
-    "de": "de-DE",    # Alemán
-    "it": "it-IT"     # Italiano
+    "en": "en-US",    # English (US)
+    "es": "es-MX",    # Spanish (Mexico)
+    "es-es": "es-ES", # Spanish (Spain)
+    "pt": "pt-BR",    # Portuguese (Brazil)
+    "fr": "fr-FR",    # French
+    "de": "de-DE",    # German
+    "it": "it-IT"     # Italian
 }
 
 TEMPLATE_MSG = """
 📝 **SCRIPT MAKER TEMPLATE**
 
-Crea scripts con voces nativas (Neural TTS).
+Create custom scripts with Neural Voices.
 
-**Comando:**
-`/setscript [servicio] [idioma] [texto]`
+**Command:**
+`/setscript [service] [lang] [text]`
 
-**Idiomas disponibles:**
-🇺🇸 `en` (Inglés)
-🇲🇽 `es` (Español Latino)
-🇪🇸 `es-es` (Español España)
-🇧🇷 `pt` (Portugués)
-🇫🇷 `fr` (Francés)
-🇮🇹 `it` (Italiano)
+**Available Languages:**
+🇺🇸 `en` (English US)
+🇲🇽 `es` (Spanish Latin)
+🇪🇸 `es-es` (Spanish Spain)
+🇧🇷 `pt` (Portuguese)
+🇫🇷 `fr` (French)
+🇮🇹 `it` (Italian)
 
-💡 **Ejemplo 1 (Latinoamérica):**
-`/setscript Amazon es Hola, le llamamos de Amazon. Detectamos un cargo extraño de una Laptop. Ingrese el código enviado a su SMS para cancelar la orden.`
+💡 **Example 1 (English):**
+`/setscript Amazon en Hello, this is Amazon Security. We blocked a suspicious attempt. Enter the code sent to your mobile.`
 
-💡 **Ejemplo 2 (Brasil):**
-`/setscript Nubank pt Olá, aqui é o Nubank. Detectamos uma tentativa de acesso na sua conta.`
+💡 **Example 2 (Spanish):**
+`/setscript PayPal es Hola, hablamos de PayPal. Ingrese su código de seguridad.`
 """
 
 @bot.message_handler(commands=['template', 'help_scripts'])
@@ -43,56 +42,56 @@ def show_template(message):
 
 @bot.message_handler(commands=['setscript'])
 def set_script(message: Message):
-    # 1. Verificar si es usuario Premium
+    # 1. Verify Subscription
     if not check_subscription(message.chat.id):
-        return bot.reply_to(message, "💎 **Feature Premium:** Necesitas un plan activo para crear scripts personalizados.\nUsa `/start` -> `Buy Plan`.")
+        return bot.reply_to(message, "💎 **Premium Feature:** You need an active plan to create custom scripts.\nUse `/start` -> `Buy Plan`.")
 
     args = message.text.split(maxsplit=3)
     # args[0]=/setscript, args[1]=service, args[2]=lang, args[3]=text
     
     if len(args) < 4:
-        return bot.reply_to(message, "❌ **Error:** Faltan datos.\n\nUsa `/template` para ver ejemplos.")
+        return bot.reply_to(message, "❌ **Error:** Missing arguments.\n\nUse `/template` to see examples.")
     
     service = args[1]
     lang_code = args[2].lower()
     text = args[3]
     
-    # Validar idioma
+    # Validate Language
     if lang_code not in LANGUAGES:
-        return bot.reply_to(message, f"⚠️ Idioma no soportado.\nUsa: `{', '.join(LANGUAGES.keys())}`", parse_mode="Markdown")
+        return bot.reply_to(message, f"⚠️ **Invalid Language.**\nSupported: `{', '.join(LANGUAGES.keys())}`", parse_mode="Markdown")
     
     twilio_lang = LANGUAGES[lang_code]
     
     if save_user_script(message.chat.id, service, twilio_lang, text):
-        bot.reply_to(message, f"✅ **Script Guardado Exitosamente!**\n\n🎯 Servicio: `{service}`\n🗣️ Voz: `{twilio_lang}`\n📜 Texto: _{text}_", parse_mode="Markdown")
+        bot.reply_to(message, f"✅ **Script Saved Successfully!**\n\n🎯 Service: `{service}`\n🗣️ Voice: `{twilio_lang}`\n📜 Text: _{text}_", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "🔴 Error de base de datos.")
+        bot.reply_to(message, "🔴 **Database Error:** Could not save script.")
 
 @bot.message_handler(commands=['myscripts'])
 def list_scripts(message):
-    # 1. Verificar suscripción
+    # 1. Verify Subscription
     if not check_subscription(message.chat.id):
-        return bot.reply_to(message, "💎 Necesitas un plan activo.")
+        return bot.reply_to(message, "💎 **Premium Feature:** You need an active plan.")
 
     scripts = get_all_user_scripts(message.chat.id)
     if not scripts:
-        return bot.reply_to(message, "📭 No tienes scripts personalizados.\nUsa `/template` para crear uno.")
+        return bot.reply_to(message, "📭 **No custom scripts found.**\nUse `/template` to create one.")
     
     msg = "📂 **MY CUSTOM SCRIPTS**\n\n"
     for s in scripts:
-        # s[0] es service_name, s[1] es language
+        # s[0] is service_name, s[1] is language
         msg += f"🔹 **{s[0].capitalize()}** ({s[1]})\n"
     
-    msg += "\nPara borrar: `/delscript [servicio]`"
+    msg += "\nTo delete: `/delscript [service]`"
     bot.reply_to(message, msg, parse_mode="Markdown")
 
 @bot.message_handler(commands=['delscript'])
 def delete_script(message):
     args = message.text.split()
-    if len(args) < 2: return bot.reply_to(message, "Uso: `/delscript [servicio]`")
+    if len(args) < 2: return bot.reply_to(message, "Usage: `/delscript [service]`")
     
     service = args[1]
     if delete_user_script(message.chat.id, service):
-        bot.reply_to(message, f"🗑️ Script de `{service}` eliminado. Se usará el default.", parse_mode="Markdown")
+        bot.reply_to(message, f"🗑️ Script for `{service}` deleted. Default script will be used.", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "❌ No se encontró ese script.")
+        bot.reply_to(message, "❌ Script not found.")
