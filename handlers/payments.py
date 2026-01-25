@@ -4,14 +4,15 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import bot, HOODPAY_API_TOKEN, HOODPAY_MERCHANT_ID, WEBHOOK_BASE_URL
 
 PLANS = {
-    "daily": {"title": "Daily", "price": 50.00},
-    "weekly": {"title": "Weekly", "price": 150.00},
-    "monthly": {"title": "Monthly", "price": 285.00},
-    "dev_test": {"title": "Test", "price": 1.00}
+    "daily": {"title": "Daily License", "price": 50.00},
+    "weekly": {"title": "Weekly License", "price": 150.00},
+    "monthly": {"title": "Monthly License", "price": 285.00},
+    "dev_test": {"title": "Dev Test", "price": 1.00}
 }
 
 def create_hoodpay_payment(chat_id, plan_type):
-    if not HOODPAY_API_TOKEN: return bot.send_message(chat_id, "Error: No Hoodpay Token")
+    if not HOODPAY_API_TOKEN: 
+        return bot.send_message(chat_id, "❌ Error: Payments not configured.")
     
     plan = PLANS.get(plan_type)
     if not plan: return
@@ -31,14 +32,29 @@ def create_hoodpay_payment(chat_id, plan_type):
         }
     }
     
+    msg = bot.send_message(chat_id, "⚙️ **Generating Payment Link...**", parse_mode="Markdown")
+    
     try:
         response = requests.post(url, json=payload, headers=headers)
         data = response.json()
+        
         if "data" in data and "url" in data["data"]:
+            checkout_url = data["data"]["url"]
+            
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("💸 Pay Now", url=data["data"]["url"]))
-            bot.send_message(chat_id, f"✅ Link Generated: ${plan['price']}", reply_markup=markup)
+            markup.add(InlineKeyboardButton(f"💸 Pay ${plan['price']}", url=checkout_url))
+            # 🔙 BOTÓN BACK (Importante por si se arrepienten)
+            markup.add(InlineKeyboardButton("❌ Cancel / Back", callback_data="back_home"))
+            
+            bot.edit_message_text(
+                f"✅ **Invoice Created**\n\nPlan: {plan['title']}\nAmount: **${plan['price']}**\n\nClick below to pay with Crypto/Card. Activation is instant.",
+                chat_id=chat_id,
+                message_id=msg.message_id,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
         else:
-            bot.send_message(chat_id, f"Error: {data}")
+            bot.edit_message_text(f"❌ Error creating invoice. Try again later.", chat_id=chat_id, message_id=msg.message_id)
+            
     except Exception as e:
-        bot.send_message(chat_id, f"Error: {e}")
+        bot.edit_message_text(f"❌ Connection Error: {e}", chat_id=chat_id, message_id=msg.message_id)
