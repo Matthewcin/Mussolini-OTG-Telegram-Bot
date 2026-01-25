@@ -12,7 +12,8 @@ import handlers.admin
 import handlers.keys
 import handlers.utils  
 import handlers.call   
-import handlers.scripts # <--- NUEVO IMPORT
+import handlers.scripts
+import handlers.profile
 
 logging.basicConfig(level=logging.INFO)
 
@@ -42,3 +43,4 @@ if __name__ == "__main__":
             else:
                 print(f"⚠️ Error: {e}")
                 time.sleep(5)
+
