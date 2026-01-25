@@ -1,5 +1,5 @@
 import psycopg2
-from config import DATABASE_URL
+from config import DATABASE_URL, ADMIN_IDS # <--- IMPORTAMOS ADMIN_IDS
 from datetime import datetime, timedelta
 
 def get_connection():
@@ -35,13 +35,13 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS otp_licenses (
                     key_code TEXT PRIMARY KEY,
                     duration_days INT NOT NULL,
-                    status TEXT DEFAULT 'active', -- Options: active, used
+                    status TEXT DEFAULT 'active',
                     used_by BIGINT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
 
-            # Tabla Scripts Personalizados (NUEVA)
+            # Tabla Scripts
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_scripts (
                     user_id BIGINT,
@@ -61,7 +61,6 @@ def init_db():
             print(f"🔴 Error Initializing DB: {e}")
 
 def register_user(user):
-    """Registers or updates a user in the database."""
     conn = get_connection()
     if conn:
         try:
@@ -78,26 +77,23 @@ def register_user(user):
             print(f"Registration Error: {e}")
 
 def add_subscription_days(user_id, days):
-    """Adds subscription time to a user."""
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
             
-            # 1. Check current subscription status
             cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
             result = cur.fetchone()
             
             current_end = result[0] if result else None
             now = datetime.now()
             
-            # 2. Calculate new end date
+            # Si ya tenía tiempo, sumamos. Si no, empezamos desde ahora.
             if current_end and current_end > now:
                 new_end = current_end + timedelta(days=days)
             else:
                 new_end = now + timedelta(days=days)
             
-            # 3. Update DB
             cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
             conn.commit()
             cur.close()
@@ -108,10 +104,24 @@ def add_subscription_days(user_id, days):
             return False, None
     return False, None
 
+# ==========================================
+# 🔍 FUNCIÓN CORREGIDA (Check Subscription)
+# ==========================================
 def check_subscription(user_id):
-    """Verifica si el usuario tiene suscripción activa (Utility Global)."""
+    """
+    Verifica si el usuario tiene acceso.
+    1. Si es ADMIN -> TRUE (Siempre pasa)
+    2. Si es USUARIO -> Revisa fecha en DB
+    """
+    
+    # 1. ADMIN BYPASS (Tú eres el dueño, no necesitas pagar)
+    if user_id in ADMIN_IDS:
+        print(f"🛡️ Admin Bypass activado para {user_id}")
+        return True
+
     conn = get_connection()
     if not conn: return False
+    
     try:
         cur = conn.cursor()
         cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
@@ -120,21 +130,29 @@ def check_subscription(user_id):
         conn.close()
         
         if result and result[0]:
-            return result[0] > datetime.now()
+            expiration = result[0]
+            now = datetime.now()
+            
+            # Debug en consola para ver por qué falla
+            is_active = expiration > now
+            if not is_active:
+                print(f"⛔ User {user_id} expired. Exp: {expiration} vs Now: {now}")
+            
+            return is_active
+            
+        print(f"⛔ User {user_id} has no subscription data.")
         return False
+        
     except Exception as e:
         print(f"Error checking sub: {e}")
         return False
 
-# --- FUNCIONES DE SCRIPTS ---
-
+# --- FUNCIONES DE SCRIPTS (Mantenlas igual) ---
 def save_user_script(user_id, service, lang, text):
-    """Guarda o actualiza un script personalizado."""
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
-            # Upsert: Si existe lo actualiza, si no lo crea
             cur.execute("""
                 INSERT INTO otp_scripts (user_id, service_name, language, script_text)
                 VALUES (%s, %s, %s, %s)
@@ -149,7 +167,6 @@ def save_user_script(user_id, service, lang, text):
     return False
 
 def get_user_script(user_id, service):
-    """Obtiene el script y el idioma de un usuario para un servicio."""
     conn = get_connection()
     if conn:
         try:
@@ -157,13 +174,12 @@ def get_user_script(user_id, service):
             cur.execute("SELECT script_text, language FROM otp_scripts WHERE user_id = %s AND service_name = %s", (user_id, service.lower()))
             result = cur.fetchone()
             conn.close()
-            return result # Devuelve (texto, idioma) o None
+            return result 
         except Exception as e:
             print(f"Error fetching script: {e}")
     return None
 
 def get_all_user_scripts(user_id):
-    """Lista todos los scripts del usuario."""
     conn = get_connection()
     if conn:
         try:
@@ -177,7 +193,6 @@ def get_all_user_scripts(user_id):
     return []
 
 def delete_user_script(user_id, service):
-    """Borra un script."""
     conn = get_connection()
     if conn:
         try:
