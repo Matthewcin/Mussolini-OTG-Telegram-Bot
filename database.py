@@ -1,9 +1,8 @@
 import psycopg2
-from config import DATABASE_URL, ADMIN_IDS # <--- IMPORTAMOS ADMIN_IDS
+from config import DATABASE_URL, ADMIN_IDS
 from datetime import datetime, timedelta
 
 def get_connection():
-    """Establishes connection to Neon DB."""
     try:
         return psycopg2.connect(DATABASE_URL)
     except Exception as e:
@@ -11,13 +10,12 @@ def get_connection():
         return None
 
 def init_db():
-    """Initializes tables if they do not exist."""
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
             
-            # Tabla Usuarios
+            # Tabla Usuarios (Con columna referral)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
@@ -26,10 +24,18 @@ def init_db():
                     last_name TEXT,
                     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     subscription_end TIMESTAMP DEFAULT NULL,
-                    is_admin BOOLEAN DEFAULT FALSE
+                    is_admin BOOLEAN DEFAULT FALSE,
+                    referred_by BIGINT
                 );
             """)
             
+            # MIGRACIÓN AUTOMÁTICA (Por si la tabla ya existía sin la columna)
+            try:
+                cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS referred_by BIGINT;")
+                conn.commit()
+            except:
+                conn.rollback()
+
             # Tabla Licencias
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_licenses (
@@ -60,35 +66,66 @@ def init_db():
         except Exception as e:
             print(f"🔴 Error Initializing DB: {e}")
 
-def register_user(user):
+# --- USER FUNCTIONS ---
+
+def register_user(user, referrer_id=None):
+    """Registers user and tracks who invited them."""
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
+            # Primero intentamos insertar
             cur.execute("""
-                INSERT INTO otp_users (user_id, username, first_name, last_name) 
-                VALUES (%s, %s, %s, %s) 
+                INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by) 
+                VALUES (%s, %s, %s, %s, %s) 
                 ON CONFLICT (user_id) 
                 DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name;
-            """, (user.id, user.username, user.first_name, user.last_name))
+            """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
+            
+            # Si ya existía, NO actualizamos el referrer (solo cuenta el primero)
             conn.commit()
             conn.close()
         except Exception as e:
             print(f"Registration Error: {e}")
+
+def get_user_info(user_id):
+    """Obtiene toda la info del perfil."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subscription_end, joined_at, referred_by FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result # (sub_end, joined_at, referred_by)
+        except Exception as e:
+            print(f"Error fetching profile: {e}")
+    return None
+
+def get_referral_count(user_id):
+    """Cuenta cuántas personas ha invitado este usuario."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM otp_users WHERE referred_by = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result[0] if result else 0
+        except Exception as e:
+            print(f"Error counting referrals: {e}")
+    return 0
 
 def add_subscription_days(user_id, days):
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
-            
             cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
             result = cur.fetchone()
-            
             current_end = result[0] if result else None
             now = datetime.now()
             
-            # Si ya tenía tiempo, sumamos. Si no, empezamos desde ahora.
             if current_end and current_end > now:
                 new_end = current_end + timedelta(days=days)
             else:
@@ -104,50 +141,23 @@ def add_subscription_days(user_id, days):
             return False, None
     return False, None
 
-# ==========================================
-# 🔍 FUNCIÓN CORREGIDA (Check Subscription)
-# ==========================================
 def check_subscription(user_id):
-    """
-    Verifica si el usuario tiene acceso.
-    1. Si es ADMIN -> TRUE (Siempre pasa)
-    2. Si es USUARIO -> Revisa fecha en DB
-    """
-    
-    # 1. ADMIN BYPASS (Tú eres el dueño, no necesitas pagar)
-    if user_id in ADMIN_IDS:
-        print(f"🛡️ Admin Bypass activado para {user_id}")
-        return True
-
+    if user_id in ADMIN_IDS: return True
     conn = get_connection()
     if not conn: return False
-    
     try:
         cur = conn.cursor()
         cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
         result = cur.fetchone()
         cur.close()
         conn.close()
-        
         if result and result[0]:
-            expiration = result[0]
-            now = datetime.now()
-            
-            # Debug en consola para ver por qué falla
-            is_active = expiration > now
-            if not is_active:
-                print(f"⛔ User {user_id} expired. Exp: {expiration} vs Now: {now}")
-            
-            return is_active
-            
-        print(f"⛔ User {user_id} has no subscription data.")
+            return result[0] > datetime.now()
         return False
-        
-    except Exception as e:
-        print(f"Error checking sub: {e}")
+    except Exception:
         return False
 
-# --- FUNCIONES DE SCRIPTS (Mantenlas igual) ---
+# --- SCRIPT FUNCTIONS (Se mantienen igual) ---
 def save_user_script(user_id, service, lang, text):
     conn = get_connection()
     if conn:
@@ -162,8 +172,7 @@ def save_user_script(user_id, service, lang, text):
             conn.commit()
             conn.close()
             return True
-        except Exception as e:
-            print(f"Error saving script: {e}")
+        except: pass
     return False
 
 def get_user_script(user_id, service):
@@ -175,8 +184,7 @@ def get_user_script(user_id, service):
             result = cur.fetchone()
             conn.close()
             return result 
-        except Exception as e:
-            print(f"Error fetching script: {e}")
+        except: pass
     return None
 
 def get_all_user_scripts(user_id):
@@ -188,8 +196,7 @@ def get_all_user_scripts(user_id):
             results = cur.fetchall()
             conn.close()
             return results
-        except Exception as e:
-            print(f"Error listing scripts: {e}")
+        except: pass
     return []
 
 def delete_user_script(user_id, service):
@@ -201,6 +208,5 @@ def delete_user_script(user_id, service):
             conn.commit()
             conn.close()
             return True
-        except Exception as e:
-            print(f"Error deleting script: {e}")
+        except: pass
     return False
