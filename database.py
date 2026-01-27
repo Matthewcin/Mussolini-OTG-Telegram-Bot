@@ -15,7 +15,7 @@ def init_db():
         try:
             cur = conn.cursor()
             
-            # Tabla Usuarios (Con columna referral)
+            # Tabla Usuarios
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
@@ -25,13 +25,14 @@ def init_db():
                     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     subscription_end TIMESTAMP DEFAULT NULL,
                     is_admin BOOLEAN DEFAULT FALSE,
-                    referred_by BIGINT
+                    referred_by BIGINT,
+                    wallet_balance DECIMAL(10, 2) DEFAULT 0.00
                 );
             """)
             
-            # MIGRACIÓN AUTOMÁTICA (Por si la tabla ya existía sin la columna)
+            # MIGRACIÓN AUTOMÁTICA: Agregar wallet_balance si no existe
             try:
-                cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS referred_by BIGINT;")
+                cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
                 conn.commit()
             except:
                 conn.rollback()
@@ -62,59 +63,90 @@ def init_db():
             conn.commit()
             cur.close()
             conn.close()
-            print("🟢 Database connected and tables ready.")
+            print("🟢 Database connected and Wallet System Ready.")
         except Exception as e:
             print(f"🔴 Error Initializing DB: {e}")
 
-# --- USER FUNCTIONS ---
+# ==========================================
+# 💰 WALLET FUNCTIONS
+# ==========================================
 
-def register_user(user, referrer_id=None):
-    """Registers user and tracks who invited them."""
+def get_user_balance(user_id):
+    """Devuelve el saldo actual. Admins tienen saldo infinito visual."""
+    if user_id in ADMIN_IDS: return 9999.00
+    
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
-            # Primero intentamos insertar
+            cur.execute("SELECT wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return float(result[0]) if result else 0.00
+        except: pass
+    return 0.00
+
+def add_balance(user_id, amount):
+    """Suma créditos al usuario."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("UPDATE otp_users SET wallet_balance = wallet_balance + %s WHERE user_id = %s", (amount, user_id))
+            conn.commit()
+            conn.close()
+            return True
+        except: pass
+    return False
+
+def deduct_balance(user_id, cost):
+    """
+    Intenta cobrar. 
+    Devuelve True si se pudo cobrar (tenía saldo).
+    Devuelve False si no tenía saldo suficiente.
+    """
+    if user_id in ADMIN_IDS: return True # Admin no paga
+
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            # Verificar saldo actual
+            cur.execute("SELECT wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
+            res = cur.fetchone()
+            current = float(res[0]) if res else 0.00
+            
+            if current >= cost:
+                new_bal = current - cost
+                cur.execute("UPDATE otp_users SET wallet_balance = %s WHERE user_id = %s", (new_bal, user_id))
+                conn.commit()
+                conn.close()
+                return True
+            else:
+                conn.close()
+                return False
+        except Exception as e:
+            print(f"Deduct Error: {e}")
+    return False
+
+# ==========================================
+# USER & SUB FUNCTIONS
+# ==========================================
+
+def register_user(user, referrer_id=None):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
             cur.execute("""
-                INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by) 
-                VALUES (%s, %s, %s, %s, %s) 
+                INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) 
+                VALUES (%s, %s, %s, %s, %s, 0.00) 
                 ON CONFLICT (user_id) 
                 DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name;
             """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
-            
-            # Si ya existía, NO actualizamos el referrer (solo cuenta el primero)
             conn.commit()
             conn.close()
-        except Exception as e:
-            print(f"Registration Error: {e}")
-
-def get_user_info(user_id):
-    """Obtiene toda la info del perfil."""
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end, joined_at, referred_by FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result # (sub_end, joined_at, referred_by)
-        except Exception as e:
-            print(f"Error fetching profile: {e}")
-    return None
-
-def get_referral_count(user_id):
-    """Cuenta cuántas personas ha invitado este usuario."""
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM otp_users WHERE referred_by = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result[0] if result else 0
-        except Exception as e:
-            print(f"Error counting referrals: {e}")
-    return 0
+        except: pass
 
 def add_subscription_days(user_id, days):
     conn = get_connection()
@@ -136,9 +168,7 @@ def add_subscription_days(user_id, days):
             cur.close()
             conn.close()
             return True, new_end
-        except Exception as e:
-            print(f"Subscription Update Error: {e}")
-            return False, None
+        except: return False, None
     return False, None
 
 def check_subscription(user_id):
@@ -154,10 +184,34 @@ def check_subscription(user_id):
         if result and result[0]:
             return result[0] > datetime.now()
         return False
-    except Exception:
-        return False
+    except: return False
 
-# --- SCRIPT FUNCTIONS (Se mantienen igual) ---
+def get_user_info(user_id):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            # Ahora traemos también wallet_balance (indice 3)
+            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result 
+        except: pass
+    return None
+
+def get_referral_count(user_id):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM otp_users WHERE referred_by = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result[0] if result else 0
+        except: pass
+    return 0
+
+# --- SCRIPT FUNCTIONS ---
 def save_user_script(user_id, service, lang, text):
     conn = get_connection()
     if conn:
