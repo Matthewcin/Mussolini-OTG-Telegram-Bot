@@ -16,6 +16,7 @@ import handlers.scripts
 import handlers.profile
 import handlers.sms # <--- NUEVO
 import handlers.cvv # <--- NUEVO
+import handlers.live # <--- NUEVO
 
 logging.basicConfig(level=logging.INFO)
 
@@ -43,3 +44,4 @@ if __name__ == "__main__":
             else:
                 print(f"⚠️ Error: {e}")
                 time.sleep(5)
+
