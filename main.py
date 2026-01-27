@@ -11,9 +11,11 @@ import handlers.payments
 import handlers.admin
 import handlers.keys
 import handlers.utils  
-import handlers.call   
+import handlers.call
 import handlers.scripts
 import handlers.profile
+import handlers.sms # <--- NUEVO
+import handlers.cvv # <--- NUEVO
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,7 +25,6 @@ if __name__ == "__main__":
     init_db()
     start_server()
 
-    # Limpiar Webhooks viejos para evitar conflictos
     try:
         bot.remove_webhook()
         time.sleep(1)
@@ -31,7 +32,6 @@ if __name__ == "__main__":
 
     print("--- Bot Escuchando ---")
     
-    # Bucle Anti-Crash (Error 409)
     while True:
         try:
             bot.infinity_polling(skip_pending=True, allowed_updates=["message", "callback_query"], timeout=60, long_polling_timeout=60)
@@ -43,4 +43,3 @@ if __name__ == "__main__":
             else:
                 print(f"⚠️ Error: {e}")
                 time.sleep(5)
-
