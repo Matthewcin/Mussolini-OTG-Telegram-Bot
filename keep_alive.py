@@ -102,30 +102,43 @@ def twilio_gather():
     return Response(str(resp), mimetype='text/xml')
 
 # ==========================================
-# 4. TWILIO CALL STATUS (GRABACIONES)
+# 4. TWILIO CALL STATUS (MONITORING)
 # ==========================================
 @app.route('/twilio/status', methods=['POST'])
 def twilio_status():
     """
-    Recibe el estado final de la llamada y la URL de grabación.
+    Monitors call status (Answered, Completed, Busy) and sends recordings.
     """
     user_id = request.args.get('user_id')
+    call_status = request.values.get('CallStatus') # ringing, in-progress, completed, busy, no-answer
     recording_url = request.values.get('RecordingUrl')
-    call_status = request.values.get('CallStatus')
     
-    # Solo nos interesa si la llamada terminó y hay grabación
-    if user_id and recording_url and call_status == 'completed':
-        try:
-            # Añadimos .mp3 al final para que Telegram lo reconozca como audio
-            audio_link = f"{recording_url}.mp3"
+    if not user_id: return Response("OK", mimetype='text/plain')
+
+    try:
+        # 🔔 1. RINGING (Optional log)
+        if call_status == 'ringing':
+            print(f"User {user_id}: Target phone is ringing...")
+
+        # 🗣️ 2. ANSWERED (IN-PROGRESS)
+        elif call_status == 'in-progress':
+            bot.send_message(user_id, "👤 **TARGET ANSWERED!**\n_Listening to the bot..._", parse_mode="Markdown")
+
+        # 🔴 3. COMPLETED (Call Ended)
+        elif call_status == 'completed':
+            msg = "🏁 **Call Ended.**"
+            # Attach recording if available
+            if recording_url:
+                msg += f"\n\n🎙️ **Audio Evidence:** {recording_url}.mp3"
             
-            bot.send_message(
-                user_id, 
-                f"🎙️ **Call Recording Available**\n\nListen to the interaction:\n{audio_link}",
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            print(f"Error sending recording: {e}")
+            bot.send_message(user_id, msg, parse_mode="Markdown")
+
+        # 🚫 4. FAILED / BUSY
+        elif call_status in ['busy', 'no-answer', 'failed', 'canceled']:
+            bot.send_message(user_id, f"❌ **Call Failed:** Target status is `{call_status}`.", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"Error sending status: {e}")
 
     return Response("OK", mimetype='text/plain')
 
