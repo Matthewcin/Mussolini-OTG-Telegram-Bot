@@ -9,7 +9,7 @@ API_URL = "https://api.hoodpay.io/v1/payment"
 # 1. DYNAMIC PLAN INVOICE (DB BASED)
 # ==========================================
 def create_dynamic_plan_invoice(user_id, plan_id):
-    # Buscamos el plan en la DB
+    # Fetch plan details from DB
     plan = get_plan_by_id(plan_id)
     if not plan:
         bot.send_message(user_id, "❌ Plan no longer exists.")
@@ -47,7 +47,7 @@ def create_dynamic_plan_invoice(user_id, plan_id):
             
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton(f"💸 Pay ${price}", url=pay_url))
-            # Callback para verificar (usaremos 'chk_plan_')
+            # Verification Callback
             markup.add(InlineKeyboardButton("✅ I Have Paid", callback_data=f"chk_plan_{pay_id}_{plan_id}"))
             
             bot.send_message(
@@ -97,11 +97,26 @@ def create_script_invoice(user_id, script_id, price, script_title):
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("💸 Pay Now", url=pay_url))
             markup.add(InlineKeyboardButton("✅ I Have Paid", callback_data=f"chk_scr_{pay_id}_{script_id}"))
-            bot.send_message(user_id, f"💎 <b>PURCHASE:</b> {script_title}\n💵 <b>Price:</b> ${price}", reply_markup=markup, parse_mode="HTML")
+            
+            bot.send_message(
+                user_id, 
+                f"💎 <b>PURCHASE:</b> {script_title}\n"
+                f"💵 <b>Price:</b> ${price}\n\n"
+                f"👇 <i>Pay securely below.</i>", 
+                reply_markup=markup, parse_mode="HTML"
+            )
     except: pass
 
 # ==========================================
-# 3. CHECK STATUS
+# 3. LEGACY/SUBSCRIPTION INVOICE
+# ==========================================
+# Kept for backward compatibility if needed, though dynamic is preferred
+def create_hoodpay_payment(chat_id, plan_key):
+    # Simple placeholder or redirect to dynamic logic if needed
+    pass
+
+# ==========================================
+# 4. CHECK STATUS
 # ==========================================
 def check_payment_status(payment_id):
     headers = {"Authorization": f"Bearer {HOODPAY_API_KEY}"}
