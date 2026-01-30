@@ -25,14 +25,20 @@ LIVE_FEED_CHANNEL_ID = os.getenv("LIVE_FEED_CHANNEL_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
-# 3. ADMIN CONFIG
+# 3. ADMIN CONFIG (TÚ + OTRO ADMIN)
 # ==========================================
-admin_env = os.getenv("ADMIN_IDS", "")
+# IDs por defecto: Tú (934491540) y el otro admin (7294894666)
+default_admins = "934491540,7294894666"
+
+# Intenta leer de Render, si no hay nada, usa los defaults
+admin_env = os.getenv("ADMIN_IDS", default_admins)
+
 try:
     ADMIN_IDS = [int(x) for x in admin_env.split(",") if x.strip()]
 except:
-    ADMIN_IDS = []
-    print("⚠️ Warning: No ADMIN_IDS found or invalid format.")
+    # Fallback de seguridad si falla el parseo
+    ADMIN_IDS = [934491540, 7294894666]
+    print("⚠️ Warning: Using default Admin IDs.")
 
 # ==========================================
 # 4. TWILIO & SERVER CONFIG
@@ -72,7 +78,6 @@ PLAN_CREDITS = {
 }
 
 # C) Costos de Uso (PRICING)
-# Esto es lo que faltaba y causaba el error en handlers/call.py
 PRICING = {
     "call_base": 0.50,      # Costo base por iniciar llamada
     "call_per_minute": 0.20 # Costo por minuto extra
