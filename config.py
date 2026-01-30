@@ -2,69 +2,43 @@ import os
 import telebot
 from dotenv import load_dotenv
 
+# Cargar variables de entorno locales (si usas .env)
 load_dotenv()
 
-# ==========================================
-# DIAGNOSTICS
-# ==========================================
 print("--- STARTING Config.py ---")
 
-API_TOKEN = os.getenv('API_TOKEN')
-DATABASE_URL = os.getenv('DATABASE_URL')
-
-# HOODPAY CONFIGURATION
-HOODPAY_MERCHANT_ID = os.getenv('HOODPAY_MERCHANT_ID')
-HOODPAY_API_TOKEN = os.getenv('HOODPAY_API_TOKEN')
-WEBHOOK_BASE_URL = os.getenv('WEBHOOK_BASE_URL') 
-
-# WEBHOOK LOG & FEEDS CONFIGURATION
-LOG_BOT_TOKEN = os.getenv('LOG_BOT_TOKEN')    
-LOG_CHANNEL_ID = os.getenv('LOG_CHANNEL_ID')
-LIVE_FEED_CHANNEL_ID = os.getenv('LIVE_FEED_CHANNEL_ID') 
-
-# TWILIO CONFIGURATION
-TWILIO_SID = os.getenv('TWILIO_SID')
-TWILIO_TOKEN = os.getenv('TWILIO_TOKEN')
-TWILIO_NUMBER = os.getenv('TWILIO_NUMBER') 
-TWILIO_APP_URL = os.getenv('WEBHOOK_BASE_URL')
-
-# ==========================================
-# 💰 PRICING SYSTEM (WALLET)
-# ==========================================
-# Costo por acción (se descuenta del saldo del usuario)
-PRICING = {
-    "call": 0.50,    # $0.50 por llamada OTP
-    "sms": 0.25,     # $0.25 por SMS
-    "cvv": 0.50,     # $0.50 por llamada CVV
-    "live": 0.00     # El panel live es gratis si ya pagó la llamada
-}
-
-# Créditos que recibe el usuario al canjear una Key/Plan
-PLAN_CREDITS = {
-    "1_day": 5.00,     # Plan diario da $5
-    "1_week": 20.00,   # Plan semanal da $20
-    "1_month": 50.00   # Plan mensual da $50
-}
-
-# 👇 ESTA ES LA LÍNEA QUE TE FALTABA 👇
-REFERRAL_BONUS = 0.20  # +$0.20 USD por invitado nuevo
-
-# ==========================================
-# CHECKS
-# ==========================================
-if API_TOKEN:
-    print(f"🟢 API_TOKEN found.")
+# 1. Telegram Bot Token
+API_TOKEN = os.getenv("API_TOKEN")
+if not API_TOKEN:
+    print("🔴 ERROR: API_TOKEN not found.")
 else:
-    print("🔴 FATAL ERROR: API_TOKEN missing.")
+    print("🟢 API_TOKEN found.")
+
+# 2. Database URL
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# 3. Admin IDs (Lista separada por comas)
+admin_env = os.getenv("ADMIN_IDS", "")
+try:
+    ADMIN_IDS = [int(x) for x in admin_env.split(",") if x.strip()]
+except:
+    ADMIN_IDS = []
+    print("⚠️ Warning: No ADMIN_IDS found or invalid format.")
+
+# 4. Twilio Credentials
+TWILIO_SID = os.getenv("TWILIO_SID")
+TWILIO_TOKEN = os.getenv("TWILIO_TOKEN")
+TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")
+
+# 5. Hoodpay Credentials (CORREGIDO AQUÍ)
+# El código espera HOODPAY_API_KEY, así que leemos eso o HOODPAY_API_TOKEN y lo asignamos
+HOODPAY_API_KEY = os.getenv("HOODPAY_API_KEY") or os.getenv("HOODPAY_API_TOKEN")
+HOODPAY_BUSINESS_ID = os.getenv("HOODPAY_BUSINESS_ID")
+
+if not HOODPAY_API_KEY:
+    print("⚠️ Warning: HOODPAY_API_KEY not found.")
+
+# Inicializar Bot
+bot = telebot.TeleBot(API_TOKEN)
 
 print("--- DIAGNOSTICS COMPLETE ---")
-
-ADMIN_IDS = [
-    934491540, 
-    7294894666 
-]
-
-if API_TOKEN:
-    bot = telebot.TeleBot(API_TOKEN)
-else:
-    raise ValueError("Stopping bot! API_TOKEN is missing.")
