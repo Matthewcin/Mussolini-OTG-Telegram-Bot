@@ -35,7 +35,7 @@ def send_welcome(message):
             # C) Datos del nuevo usuario
             new_user_name = f"@{user.username}" if user.username else user.first_name
             
-            # D) Notificación
+            # D) Notificación al Padrino
             notification_msg = f"""
 🎉 **New Referral!**
 
@@ -66,41 +66,39 @@ Select an option below:
     """
 
     # ==========================================
-    # 3. BOTONES (ACTUALIZADOS)
+    # 3. DISEÑO DE BOTONES (CORREGIDO)
     # ==========================================
-    markup = InlineKeyboardMarkup(row_width=2)
+    markup = InlineKeyboardMarkup()
     
-    # ⚡ FILA 1: DASHBOARD (WIZARD) & MARKET (NUEVO)
-    markup.add(
-        InlineKeyboardButton("⚡ Dashboard", callback_data="open_dashboard"),
-        InlineKeyboardButton("🛒 Market", callback_data="market_home")
-    )
+    # 1. DASHBOARD (ANCHO COMPLETO - PROTAGONISTA)
+    markup.add(InlineKeyboardButton("⚡ ＤＡＳＨＢＯＡＲＤ", callback_data="open_dashboard"))
 
-    # FILA 2: PERFIL & DEPOSITOS
-    markup.add(
-        InlineKeyboardButton("👤 Profile", callback_data="show_profile"),
-        InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs")
+    # 2. REJILLA DE OPCIONES (2 COLUMNAS)
+    markup.row(
+        InlineKeyboardButton("🛒 Market", callback_data="market_home"),
+        InlineKeyboardButton("👤 Profile", callback_data="show_profile")
+    )
+    markup.row(
+        InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"),
+        InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key")
+    )
+    markup.row(
+        InlineKeyboardButton("👥 Referral", callback_data="referral"),
+        InlineKeyboardButton("🛠️ Features", callback_data="features")
     )
     
-    # FILA 3: KEYS & REFERIDOS
-    markup.add(
-        InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"),
-        InlineKeyboardButton("👥 Referral", callback_data="referral")
-    )
-
-    # FILA 4: EXTRAS
-    markup.add(
-        InlineKeyboardButton("🛠️ Features", callback_data="features"),
-        InlineKeyboardButton("⛑️ Support", callback_data="support")
-    )
+    # 3. EXTRAS Y SOPORTE
+    markup.add(InlineKeyboardButton("⛑️ Support", callback_data="support"))
     
-    # FILA ADMIN
+    # 4. ADMIN PANEL (ANCHO COMPLETO - SOLO ADMINS)
     if user.id in ADMIN_IDS:
-        markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
+        markup.add(InlineKeyboardButton("🕴️ ＡＤＭＩＮ  ＰＡＮＥＬ", callback_data="admin_panel"))
 
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
 
-# Handler de soporte (necesario si el botón existe)
+# ==========================================
+# 4. HANDLER DE SOPORTE (COPYRIGHT ACTUALIZADO)
+# ==========================================
 @bot.callback_query_handler(func=lambda call: call.data == "support")
 def support_handler(call):
     text = (
