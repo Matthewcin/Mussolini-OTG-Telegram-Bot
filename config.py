@@ -16,8 +16,7 @@ if not API_TOKEN:
 else:
     print("🟢 API_TOKEN found.")
 
-# Canal para Live Feed (Opcional, si no existe lo dejamos en None)
-# Si te da error, ponle un ID de canal o dejalo vacio en Render
+# Canal para Live Feed (Opcional)
 LIVE_FEED_CHANNEL_ID = os.getenv("LIVE_FEED_CHANNEL_ID")
 
 # ==========================================
@@ -42,8 +41,7 @@ TWILIO_SID = os.getenv("TWILIO_SID")
 TWILIO_TOKEN = os.getenv("TWILIO_TOKEN")
 TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")
 
-# URL de tu servidor en Render (necesaria para los Webhooks de Twilio)
-# Render suele dar la variable RENDER_EXTERNAL_URL automaticamente
+# URL de tu servidor en Render
 TWILIO_APP_URL = os.getenv("TWILIO_APP_URL") or os.getenv("RENDER_EXTERNAL_URL")
 
 # ==========================================
@@ -57,7 +55,16 @@ if not HOODPAY_API_KEY:
     print("⚠️ Warning: HOODPAY_API_KEY not found.")
 
 # ==========================================
-# 6. INITIALIZE BOT
+# 6. BOT SETTINGS (AGREGADO)
+# ==========================================
+# Cantidad de crédito gratis que recibe el usuario al invitar a alguien
+try:
+    REFERRAL_BONUS = float(os.getenv("REFERRAL_BONUS", "2.00"))
+except:
+    REFERRAL_BONUS = 2.00
+
+# ==========================================
+# 7. INITIALIZE BOT
 # ==========================================
 bot = telebot.TeleBot(API_TOKEN)
 
