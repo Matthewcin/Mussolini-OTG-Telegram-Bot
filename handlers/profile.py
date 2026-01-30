@@ -1,237 +1,130 @@
-from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from datetime import datetime
 from config import bot, ADMIN_IDS
-from database import (
-    save_user_script, get_all_user_scripts, delete_user_script, 
-    check_subscription, get_connection, get_user_script, get_market_script_by_name
-)
-
-LANGUAGES = {
-    "en": "en-US", "es": "es-MX", "es-es": "es-ES",
-    "pt": "pt-BR", "fr": "fr-FR", "de": "de-DE", "it": "it-IT"
-}
+from database import get_connection, check_subscription, get_user_balance, get_referral_count
 
 # ==========================================
-# 🔍 GET SCRIPT (SMART)
+# 👤 PROFILE GENERATOR
 # ==========================================
-@bot.message_handler(commands=['getscript'])
-def get_script_by_name_cmd(message: Message):
-    # Check Args
-    try: query = message.text.split(maxsplit=1)[1]
-    except IndexError: return bot.reply_to(message, "⚠️ Usage: <code>/getscript [Name]</code>", parse_mode="HTML")
+def get_profile_content(user_id, first_name):
+    """
+    Genera el texto y los botones del perfil de usuario.
+    Retorna: (text, markup)
+    """
+    conn = get_connection()
+    if not conn:
+        return "⚠️ Database Error", None
 
-    # DB Search
-    script_data = get_market_script_by_name(query)
+    cur = conn.cursor()
     
-    if not script_data:
-        return bot.reply_to(message, f"❌ Script <b>'{query}'</b> not found in Market.", parse_mode="HTML")
+    # 1. Obtener datos básicos
+    cur.execute("SELECT joined_at, subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+    user_data = cur.fetchone()
     
-    # Unpack data
-    sid, title, price, is_prem, text, service, lang = script_data
-    price = float(price)
+    # 2. Obtener estadísticas de compras (Scripts)
+    cur.execute("SELECT COUNT(*) FROM otp_purchases WHERE user_id = %s", (user_id,))
+    scripts_owned = cur.fetchone()[0]
+    
+    # 3. Obtener Balance
+    balance = get_user_balance(user_id)
+    
+    # 4. Obtener Referidos
+    refs = get_referral_count(user_id)
+    
+    conn.close()
 
-    # A) FREE Script -> Install immediately
-    if not is_prem or price <= 0:
-        save_user_script(message.from_user.id, service, lang, text)
-        bot.reply_to(message, 
-            f"✅ <b>INSTALLED!</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 <b>Script:</b> {title}\n"
-            f"🏢 <b>Service:</b> {service}\n"
-            f"🗣 <b>Lang:</b> {lang}\n"
-            f"<i>Added to library.</i>", 
-            parse_mode="HTML")
-            
-    # B) PREMIUM Script -> Show Menu
+    if not user_data:
+        return "⚠️ Profile not found. Type /start to register.", None
+
+    joined_at, sub_end = user_data
+
+    # --- LÓGICA DE ESTADO ---
+    if user_id in ADMIN_IDS:
+        status_badge = "🕴️ ＡＤＭＩＮ"
+        sub_status = "∞ Infinite Access"
+    elif check_subscription(user_id):
+        status_badge = "💎 ＰＲＥＭＩＵＭ"
+        days_left = (sub_end - datetime.now()).days if sub_end else 0
+        sub_status = f"Active ({days_left} days left)"
     else:
-        # Blurred preview logic
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton(f"👁️ Preview (Blurred)", callback_data=f"view_prem_{sid}"))
-        markup.add(InlineKeyboardButton(f"🛒 Buy for ${price}", callback_data=f"buy_opt_{sid}"))
-        markup.add(InlineKeyboardButton("⬅️ Cancel", callback_data="del_msg"))
+        status_badge = "👤 ＦＲＥＥ  ＵＳＥＲ"
+        sub_status = "Inactive"
+
+    # --- DISEÑO DEL TEXTO (HTML) ---
+    text = (
+        f"👤 <b>ＵＳＥＲ  ＰＲＯＦＩＬＥ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+        f"🏷 <b>Role:</b> {status_badge}\n"
+        f"📅 <b>Joined:</b> {joined_at.strftime('%Y-%m-%d')}\n\n"
         
-        bot.reply_to(message, 
-            f"💎 <b>PREMIUM SCRIPT FOUND</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 <b>Name:</b> {title}\n"
-            f"💰 <b>Price:</b> ${price}\n"
-            f"🔒 <b>Status:</b> Locked", 
-            reply_markup=markup, parse_mode="HTML")
-
-# ==========================================
-# 🕹️ GETSCRIPT CALLBACKS
-# ==========================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("view_prem_"))
-def view_premium_preview(call: CallbackQuery):
-    try:
-        sid = int(call.data.split("_")[2])
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT script_text, title FROM otp_market WHERE id=%s", (sid,))
-        res = cur.fetchone()
-        conn.close()
+        f"👛 <b>ＷＡＬＬＥＴ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 <b>Balance:</b> <code>${balance:.2f}</code>\n"
+        f"📦 <b>Scripts:</b> <code>{scripts_owned} Owned</code>\n\n"
         
-        if res:
-            text = res[0]
-            title = res[1]
-            censored = text[:50] + " ... " + ("▒" * 30) + "\n\n(Purchase to unlock)"
-            
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🛒 Buy Now", callback_data=f"buy_opt_{sid}"))
-            markup.add(InlineKeyboardButton("⬅ Back", callback_data="del_msg"))
-            
-            bot.edit_message_text(
-                f"👁️ <b>PREVIEW: {title}</b>\n━━━━━━━━━━━━━━━━━━━━\n<code>{censored}</code>",
-                call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML"
-            )
-    except: pass
+        f"🔑 <b>ＳＵＢＳＣＲＩＰＴＩＯＮ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📡 <b>Status:</b> {sub_status}\n"
+        f"👥 <b>Referrals:</b> <code>{refs} Users</code>"
+    )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_opt_"))
-def buy_option_bridge(call: CallbackQuery):
-    # Bridges the /getscript button to the existing buying command
-    sid = call.data.split("_")[2]
-    call.message.text = f"/confirmbuy {sid}"
-    confirm_buy_command(call.message) 
-
-@bot.callback_query_handler(func=lambda call: call.data == "del_msg")
-def delete_msg_callback(call: CallbackQuery):
-    bot.delete_message(call.message.chat.id, call.message.message_id)
-
-# ==========================================
-# 1. CREATE SCRIPT & ACTIONS
-# ==========================================
-@bot.message_handler(commands=['setscript'])
-def set_script(message: Message):
-    if not check_subscription(message.chat.id):
-        return bot.reply_to(message, "💎 <b>PREMIUM FEATURE</b>\nBuy a plan.", parse_mode="HTML")
-
-    try:
-        args = message.text.split(maxsplit=3)
-        if len(args) < 4: return bot.reply_to(message, "Usage: <code>/setscript [service] [lang] [text]</code>", parse_mode="HTML")
-        
-        service, lang_code, text = args[1].lower(), args[2].lower(), args[3]
-        if lang_code not in LANGUAGES: return bot.reply_to(message, "Invalid Language.")
-        twilio_lang = LANGUAGES[lang_code]
-        
-        if save_user_script(message.chat.id, service, twilio_lang, text):
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("💰 ＳＥＬＬ  ＳＣＲＩＰＴ", callback_data=f"act_sell_{service}"))
-            markup.row(InlineKeyboardButton("🌍 ＰＵＢＬＩＣ", callback_data=f"act_pub_{service}"), 
-                       InlineKeyboardButton("🔒 ＰＲＩＶＡＴＥ", callback_data=f"act_priv"))
-            bot.reply_to(message, f"✅ <b>Saved!</b> What next?", reply_markup=markup, parse_mode="HTML")
-    except Exception as e:
-        bot.reply_to(message, f"⚠️ Error: {e}")
-
-# ==========================================
-# 2. ACTION CALLBACKS (SELL/PUB/PRIV)
-# ==========================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("act_"))
-def handle_script_action(call: CallbackQuery):
-    action = call.data.split("_")[1]
-    if action == "priv":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        bot.answer_callback_query(call.id, "🔒 Saved privately.")
-        return
-
-    try: service = call.data.split("_")[2]
-    except: return
-
-    if action == "pub":
-        publish_to_market(call.message, call.from_user.id, service, 0.00, "credits")
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-
-    elif action == "sell":
-        msg = bot.edit_message_text("💰 Enter Price (USD):", call.message.chat.id, call.message.message_id)
-        bot.register_next_step_handler(msg, process_price_step, service)
-
-def process_price_step(message, service):
-    try:
-        price = float(message.text)
-        if price < 1.00: return bot.reply_to(message, "⚠️ Min $1.00")
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("💳 CREDITS", callback_data=f"paypref_cred_{price}_{service}"))
-        markup.add(InlineKeyboardButton("💸 CRYPTO", callback_data=f"paypref_cryp_{price}_{service}"))
-        bot.reply_to(message, "👇 <b>Select Payout Method:</b>", reply_markup=markup, parse_mode="HTML")
-    except: pass
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("paypref_"))
-def handle_payment_preference(call: CallbackQuery):
-    parts = call.data.split("_")
-    method, price, service = parts[1], float(parts[2]), parts[3]
+    # --- BOTONES ---
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton("🪙 Top Up Balance", callback_data="buy_subs"),
+               InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"))
     
-    if method == "cred":
-        publish_to_market(call.message, call.from_user.id, service, price, "credits")
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    elif method == "cryp":
-        msg = bot.edit_message_text("💸 Enter Wallet Address:", call.message.chat.id, call.message.message_id)
-        bot.register_next_step_handler(msg, process_wallet_step, service, price)
-
-def process_wallet_step(message, service, price):
-    publish_to_market(message, message.from_user.id, service, price, "crypto", message.text)
-
-def publish_to_market(message, user_id, service, price, payout_pref, payout_wallet=None):
-    data = get_user_script(user_id, service)
-    if not data: return
-    script_text, lang = data
-    is_prem = price > 0
-    try: author = message.from_user.first_name
-    except: author = "User"
-    title = f"{author}'s {service.capitalize()}"
+    markup.row(InlineKeyboardButton("📂 My Scripts", callback_data="show_myscripts"),
+               InlineKeyboardButton("👥 Invite Friends", callback_data="referral"))
     
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO otp_market (title, service_name, script_text, price, is_premium, author_id, language, payout_pref, payout_wallet) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", 
-                (title, service, script_text, price, is_prem, user_id, lang, payout_pref, payout_wallet))
-    conn.commit()
-    conn.close()
-    bot.send_message(message.chat.id, f"✅ <b>Published!</b>\nItem: {title}\nPrice: ${price}", parse_mode="HTML")
+    markup.add(InlineKeyboardButton("⬅ Back to Menu", callback_data="back_home"))
+
+    return text, markup
 
 # ==========================================
-# 4. BUYING LOGIC
+# 👥 REFERRAL SYSTEM
 # ==========================================
-@bot.message_handler(commands=['confirmbuy'])
-def confirm_buy_command(message: Message):
-    try: script_id = int(message.text.split()[1])
-    except: return bot.reply_to(message, "Usage: <code>/confirmbuy [ID]</code>", parse_mode="HTML")
-
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT title, price, author_id FROM otp_market WHERE id = %s", (script_id,))
-    item = cur.fetchone()
-    conn.close()
+def show_referral(message):
+    """
+    Muestra el enlace de referido y las estadísticas.
+    """
+    user_id = message.from_user.id
+    bot_name = bot.get_me().username
+    ref_link = f"https://t.me/{bot_name}?start={user_id}"
     
-    if not item: return bot.reply_to(message, "❌ Not found.")
-    title, price, author_id = item
+    refs = get_referral_count(user_id)
+    # Ejemplo: Ganas $2.00 de crédito por referido (puedes ajustar esto)
+    earnings = refs * 2.00 
     
-    if author_id == message.from_user.id: return bot.reply_to(message, "❌ Own script.")
+    text = (
+        f"👥 <b>ＲＥＦＥＲＲＡＬ  ＳＹＳＴＥＭ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Invite your friends and earn credits!\n\n"
+        
+        f"🔗 <b>Your Link:</b>\n"
+        f"<code>{ref_link}</code>\n\n"
+        
+        f"📊 <b>Stats:</b>\n"
+        f"• Total Invites: <code>{refs}</code>\n"
+        f"• Total Earned: <code>${earnings:.2f}</code>\n\n"
+        
+        f"<i>(Credits are automatically added when they join)</i>"
+    )
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton(f"💳 Pay Credits (${price})", callback_data=f"buy_cred_{script_id}"))
-    markup.add(InlineKeyboardButton(f"💸 Pay Crypto", callback_data=f"buy_cryp_{script_id}"))
+    markup.add(InlineKeyboardButton("⬅ Back", callback_data="show_profile"))
     
-    bot.reply_to(message, f"🛒 <b>Checkout:</b> {title} (${price})", reply_markup=markup, parse_mode="HTML")
+    # Si es llamada de callback, editamos. Si es comando, enviamos.
+    try:
+        bot.edit_message_text(text, message.chat.id, message.message_id, reply_markup=markup, parse_mode="HTML")
+    except:
+        bot.reply_to(message, text, reply_markup=markup, parse_mode="HTML")
 
 # ==========================================
-# OTHER COMMANDS
+# 🕹️ COMANDO /PROFILE
 # ==========================================
-@bot.message_handler(commands=['myscripts'])
-def list_scripts(message):
-    scripts = get_all_user_scripts(message.chat.id)
-    if not scripts: return bot.reply_to(message, "📭 Empty.")
-    msg = "📂 <b>SCRIPTS</b>\n"
-    for s in scripts: msg += f"🔹 <code>{s[0]}</code>\n"
-    bot.reply_to(message, msg, parse_mode="HTML")
-
-@bot.message_handler(commands=['delscript'])
-def delete_script_cmd(message):
-    try: service = message.text.split()[1]
-    except: return
-    if delete_user_script(message.chat.id, service): bot.reply_to(message, "🗑️ Deleted.")
-
-@bot.message_handler(commands=['buyscript', 'shop'])
-def shop_menu(message):
-    bot.reply_to(message, "💎 Use the <b>Dashboard</b> to access the shop.", parse_mode="HTML")
-
-@bot.message_handler(commands=['freescripts'])
-def free_scripts(message):
-    bot.reply_to(message, "📚 Use the <b>Dashboard</b> to access library.", parse_mode="HTML")
+@bot.message_handler(commands=['profile', 'me'])
+def profile_command(message: Message):
+    text, markup = get_profile_content(message.from_user.id, message.from_user.first_name)
+    if text:
+        bot.reply_to(message, text, reply_markup=markup, parse_mode="HTML")
