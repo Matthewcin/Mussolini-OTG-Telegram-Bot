@@ -46,6 +46,9 @@ PLAN_CREDITS = {
     "1_month": 50.00   # Plan mensual da $50
 }
 
+# 👇 ESTA ES LA LÍNEA QUE TE FALTABA 👇
+REFERRAL_BONUS = 0.20  # +$0.20 USD por invitado nuevo
+
 # ==========================================
 # CHECKS
 # ==========================================
