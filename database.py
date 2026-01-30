@@ -17,28 +17,90 @@ def init_db():
             cur = conn.cursor()
             
             # 1. Users
-            cur.execute("""CREATE TABLE IF NOT EXISTS otp_users (user_id BIGINT PRIMARY KEY, username TEXT, first_name TEXT, last_name TEXT, joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, subscription_end TIMESTAMP DEFAULT NULL, is_admin BOOLEAN DEFAULT FALSE, referred_by BIGINT, wallet_balance DECIMAL(10, 2) DEFAULT 0.00);""")
-            # 2. Licenses
-            cur.execute("""CREATE TABLE IF NOT EXISTS otp_licenses (key_code TEXT PRIMARY KEY, duration_days INT NOT NULL, status TEXT DEFAULT 'active', used_by BIGINT, credits_amount DECIMAL(10, 2) DEFAULT 0.00, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""")
-            # 3. Scripts
-            cur.execute("""CREATE TABLE IF NOT EXISTS otp_scripts (user_id BIGINT, service_name TEXT, language TEXT DEFAULT 'en-US', script_text TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, service_name));""")
-            # 4. Market
-            cur.execute("""CREATE TABLE IF NOT EXISTS otp_market (id SERIAL PRIMARY KEY, title TEXT NOT NULL, service_name TEXT NOT NULL, script_text TEXT NOT NULL, language TEXT DEFAULT 'en-US', price DECIMAL(10, 2) DEFAULT 0.00, is_premium BOOLEAN DEFAULT FALSE, author_id BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, payout_pref TEXT DEFAULT 'credits', payout_wallet TEXT DEFAULT NULL);""")
-            # 5. Purchases
-            cur.execute("""CREATE TABLE IF NOT EXISTS otp_purchases (user_id BIGINT, script_id INT, purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, script_id));""")
-            # 6. Plans
-            cur.execute("""CREATE TABLE IF NOT EXISTS otp_plans (id SERIAL PRIMARY KEY, price DECIMAL(10, 2) NOT NULL UNIQUE, reward_balance DECIMAL(10, 2) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    subscription_end TIMESTAMP DEFAULT NULL,
+                    is_admin BOOLEAN DEFAULT FALSE,
+                    referred_by BIGINT,
+                    wallet_balance DECIMAL(10, 2) DEFAULT 0.00
+                );
+            """)
             
-            # 7. BOT SETTINGS (NUEVO)
-            # Guarda config global: maintenance_mode, maintenance_msg, changelog_text
+            # 2. Licenses
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_licenses (
+                    key_code TEXT PRIMARY KEY,
+                    duration_days INT NOT NULL,
+                    status TEXT DEFAULT 'active',
+                    used_by BIGINT,
+                    credits_amount DECIMAL(10, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # 3. User Scripts
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_scripts (
+                    user_id BIGINT,
+                    service_name TEXT,
+                    language TEXT DEFAULT 'en-US',
+                    script_text TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, service_name)
+                );
+            """)
+
+            # 4. Market
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_market (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    service_name TEXT NOT NULL,
+                    script_text TEXT NOT NULL,
+                    language TEXT DEFAULT 'en-US',
+                    price DECIMAL(10, 2) DEFAULT 0.00,
+                    is_premium BOOLEAN DEFAULT FALSE,
+                    author_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    payout_pref TEXT DEFAULT 'credits',
+                    payout_wallet TEXT DEFAULT NULL
+                );
+            """)
+
+            # 5. Purchases
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_purchases (
+                    user_id BIGINT,
+                    script_id INT,
+                    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, script_id)
+                );
+            """)
+
+            # 6. Payment Plans
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_plans (
+                    id SERIAL PRIMARY KEY,
+                    price DECIMAL(10, 2) NOT NULL UNIQUE,
+                    reward_balance DECIMAL(10, 2) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            
+            # 7. BOT SETTINGS (NUEVO - GLOBAL CONFIG)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS bot_settings (
                     setting_key TEXT PRIMARY KEY,
                     setting_value TEXT
                 );
             """)
-
-            # Default Plans Logic
+            
+            # === AUTO-GENERAR PLANES DEFAULT ===
             cur.execute("SELECT COUNT(*) FROM otp_plans")
             if cur.fetchone()[0] == 0:
                 cur.execute("INSERT INTO otp_plans (price, reward_balance) VALUES (10.00, 10.00), (25.00, 30.00), (50.00, 65.00)")
@@ -50,10 +112,55 @@ def init_db():
         except Exception as e:
             print(f"🔴 Init DB Error: {e}")
 
-# ... (MANTÉN TUS FUNCIONES ANTIGUAS: get_user_balance, register_user, etc.) ...
-# ... (POR BREVEDAD, ASUMO QUE ESTÁN AQUÍ. NO LAS BORRES) ...
-# ... (Solo agrego las NUEVAS funciones abajo) ...
+# ==========================================
+# ⚙️ SETTINGS & GLOBAL FUNCTIONS (NUEVO)
+# ==========================================
+def get_setting(key):
+    conn = get_connection()
+    val = None
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT setting_value FROM bot_settings WHERE setting_key = %s", (key,))
+            res = cur.fetchone()
+            val = res[0] if res else None
+            conn.close()
+        except: pass
+    return val
 
+def set_setting(key, value):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO bot_settings (setting_key, setting_value) 
+                VALUES (%s, %s) 
+                ON CONFLICT (setting_key) 
+                DO UPDATE SET setting_value = EXCLUDED.setting_value
+            """, (key, value))
+            conn.commit()
+            conn.close()
+            return True
+        except: pass
+    return False
+
+def get_all_users_ids():
+    """Returns a list of all user IDs for broadcasting."""
+    conn = get_connection()
+    ids = []
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM otp_users")
+            ids = [r[0] for r in cur.fetchall()]
+            conn.close()
+        except: pass
+    return ids
+
+# ==========================================
+# 💰 WALLET FUNCTIONS
+# ==========================================
 def get_user_balance(user_id):
     if user_id in ADMIN_IDS: return 9999.00
     conn = get_connection()
@@ -100,6 +207,9 @@ def deduct_balance(user_id, cost):
         except: pass
     return False
 
+# ==========================================
+# USER FUNCTIONS
+# ==========================================
 def register_user(user, referrer_id=None):
     conn = get_connection()
     is_new_user = False
@@ -118,49 +228,6 @@ def register_user(user, referrer_id=None):
         except: pass
     return is_new_user
 
-def check_subscription(user_id):
-    if user_id in ADMIN_IDS: return True
-    conn = get_connection()
-    if not conn: return False
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
-        result = cur.fetchone()
-        conn.close()
-        if result and result[0]: return result[0] > datetime.now()
-        return False
-    except: return False
-
-def add_subscription_days(user_id, days):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            current_end = result[0] if result else None
-            now = datetime.now()
-            if current_end and current_end > now: new_end = current_end + timedelta(days=days)
-            else: new_end = now + timedelta(days=days)
-            cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
-            conn.commit()
-            conn.close()
-            return True, new_end
-        except: return False, None
-    return False, None
-
-def get_user_info(user_id):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result 
-        except: pass
-    return None
-
 def get_referral_count(user_id):
     conn = get_connection()
     if conn:
@@ -173,6 +240,9 @@ def get_referral_count(user_id):
         except: pass
     return 0
 
+# ==========================================
+# WIZARD & SCRIPT HELPERS
+# ==========================================
 def get_available_services(user_id):
     conn = get_connection()
     services = []
@@ -190,18 +260,6 @@ def get_available_services(user_id):
         except: pass
     return services
 
-def get_market_script_by_name(service_name):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT id, title, price, is_premium, script_text, service_name, language FROM otp_market WHERE service_name ILIKE %s ORDER BY price ASC LIMIT 1", (service_name,))
-            result = cur.fetchone()
-            conn.close()
-            return result
-        except: pass
-    return None
-
 def save_user_script(user_id, service, lang, text):
     conn = get_connection()
     if conn:
@@ -213,18 +271,6 @@ def save_user_script(user_id, service, lang, text):
             return True
         except: pass
     return False
-
-def get_user_script(user_id, service):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT script_text, language FROM otp_scripts WHERE user_id = %s AND service_name = %s", (user_id, service.lower()))
-            result = cur.fetchone()
-            conn.close()
-            return result 
-        except: pass
-    return None
 
 def get_all_user_scripts(user_id):
     conn = get_connection()
@@ -238,18 +284,9 @@ def get_all_user_scripts(user_id):
         except: pass
     return []
 
-def delete_user_script(user_id, service):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM otp_scripts WHERE user_id = %s AND service_name = %s", (user_id, service.lower()))
-            conn.commit()
-            conn.close()
-            return True
-        except: pass
-    return False
-
+# ==========================================
+# PLAN & LICENSE MANAGEMENT
+# ==========================================
 def manage_plan(action, price, reward=0):
     conn = get_connection()
     if not conn: return False
@@ -303,43 +340,3 @@ def create_license(days):
         except Exception as e:
             print(f"Key Gen Error: {e}")
     return None
-
-# ==========================================
-# 🆕 SETTINGS & BROADCAST FUNCTIONS
-# ==========================================
-def get_setting(key):
-    conn = get_connection()
-    val = None
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT setting_value FROM bot_settings WHERE setting_key = %s", (key,))
-            res = cur.fetchone()
-            val = res[0] if res else None
-            conn.close()
-        except: pass
-    return val
-
-def set_setting(key, value):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("INSERT INTO bot_settings (setting_key, setting_value) VALUES (%s, %s) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value", (key, value))
-            conn.commit()
-            conn.close()
-            return True
-        except: pass
-    return False
-
-def get_all_users_ids():
-    conn = get_connection()
-    ids = []
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT user_id FROM otp_users")
-            ids = [r[0] for r in cur.fetchall()]
-            conn.close()
-        except: pass
-    return ids
