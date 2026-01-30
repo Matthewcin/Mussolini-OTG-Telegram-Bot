@@ -6,8 +6,9 @@ from database import register_user, add_balance, get_referral_count
 def send_welcome(message):
     user = message.from_user
     
-    # Lógica de Referidos
-    # El comando viene como: "/start 123456"
+    # ==========================================
+    # 1. LOGICA DE REFERIDOS
+    # ==========================================
     args = message.text.split()
     referrer_id = None
     
@@ -19,11 +20,10 @@ def send_welcome(message):
         except:
             pass
             
-    # 1. REGISTRAR USUARIO (Y capturar si es nuevo)
-    # register_user devuelve True solo si el usuario NO existía antes
+    # Registrar usuario (Devuelve True si es nuevo)
     is_new = register_user(user, referrer_id)
 
-    # 2. SI ES NUEVO Y TIENE PADRINO -> PAGAR RECOMPENSA Y AVISAR
+    # Si es nuevo y tiene padrino -> Pagar recompensa
     if is_new and referrer_id:
         try:
             # A) Dar dinero al que invitó
@@ -32,10 +32,10 @@ def send_welcome(message):
             # B) Obtener contador actualizado
             total_refs = get_referral_count(referrer_id)
             
-            # C) Datos del nuevo usuario para el mensaje
+            # C) Datos del nuevo usuario
             new_user_name = f"@{user.username}" if user.username else user.first_name
             
-            # D) MENSAJE EN INGLÉS PARA EL PADRINO
+            # D) Notificación
             notification_msg = f"""
 🎉 **New Referral!**
 
@@ -47,37 +47,70 @@ def send_welcome(message):
 
 _The tokens have been added to your general balance._
             """
-            
-            # Enviar mensaje al Referrer (Padrino)
             bot.send_message(referrer_id, notification_msg, parse_mode="Markdown")
             
         except Exception as e:
-            print(f"Error enviando bono de referido: {e}")
+            print(f"Error referral bonus: {e}")
 
-    # 3. MENSAJE DE BIENVENIDA AL USUARIO
+    # ==========================================
+    # 2. MENSAJE DE BIENVENIDA
+    # ==========================================
     text = f"""
-BIGFATOTP - 𝙊𝙏𝙋 𝘽𝙊𝙏
+🛡️ **MUSSOLINI OTP BOT v31**
 Hello, {user.first_name}! Welcome to the professional Social Engineering kit.
 
-MODES: Banks, Crypto, Social Media.
-STATUS: Online 🟢
+🔥 **MODES:** Banks, Crypto, Social Media.
+🟢 **STATUS:** Online
 
 Select an option below:
     """
 
+    # ==========================================
+    # 3. BOTONES (ACTUALIZADOS)
+    # ==========================================
     markup = InlineKeyboardMarkup(row_width=2)
+    
+    # ⚡ FILA 1: DASHBOARD (WIZARD) & MARKET (NUEVO)
     markup.add(
-        InlineKeyboardButton("🎟️ Enter Key", callback_data="enter_key"),
+        InlineKeyboardButton("⚡ Dashboard", callback_data="open_dashboard"),
+        InlineKeyboardButton("🛒 Market", callback_data="market_home")
+    )
+
+    # FILA 2: PERFIL & DEPOSITOS
+    markup.add(
         InlineKeyboardButton("👤 Profile", callback_data="show_profile"),
-        InlineKeyboardButton("🪙 ₿uy Plan", callback_data="buy_subs"),
-        InlineKeyboardButton("🤖 Commands", callback_data="commands"),
+        InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs")
+    )
+    
+    # FILA 3: KEYS & REFERIDOS
+    markup.add(
+        InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"),
+        InlineKeyboardButton("👥 Referral", callback_data="referral")
+    )
+
+    # FILA 4: EXTRAS
+    markup.add(
         InlineKeyboardButton("🛠️ Features", callback_data="features"),
-        InlineKeyboardButton("🫂 Community", callback_data="community"),
-        InlineKeyboardButton("👥 Referral", callback_data="referral"),
         InlineKeyboardButton("⛑️ Support", callback_data="support")
     )
     
+    # FILA ADMIN
     if user.id in ADMIN_IDS:
         markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
 
-    bot.send_message(message.chat.id, text, reply_markup=markup)
+    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
+
+# Handler de soporte (necesario si el botón existe)
+@bot.callback_query_handler(func=lambda call: call.data == "support")
+def support_handler(call):
+    text = (
+        "⛑️ **SUPPORT**\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "Contact Admin for help:\n"
+        "👨‍💻 @Mussolini860\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "Contact Developer for Issues\n"
+        "🦠 @whois_tyler (VirusNTO)"
+    )
+    bot.answer_callback_query(call.id, "Support contact sent.")
+    bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
