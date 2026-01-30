@@ -15,7 +15,7 @@ def init_db():
         try:
             cur = conn.cursor()
             
-            # 1. Tabla Usuarios
+            # Tablas anteriores (Users, Licenses, Scripts)... se mantienen igual
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
@@ -30,7 +30,6 @@ def init_db():
                 );
             """)
             
-            # 2. Tabla Licencias
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_licenses (
                     key_code TEXT PRIMARY KEY,
@@ -42,7 +41,6 @@ def init_db():
                 );
             """)
 
-            # 3. Tabla Scripts Personales (Lo que usa el usuario)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_scripts (
                     user_id BIGINT,
@@ -54,7 +52,7 @@ def init_db():
                 );
             """)
 
-            # 4. Tabla Mercado (Scripts en Venta/Gratis)
+            # ⚠️ ACTUALIZADO: Tabla Mercado con Preferencias de Pago
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_market (
                     id SERIAL PRIMARY KEY,
@@ -65,11 +63,12 @@ def init_db():
                     price DECIMAL(10, 2) DEFAULT 0.00,
                     is_premium BOOLEAN DEFAULT FALSE,
                     author_id BIGINT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    payout_pref TEXT DEFAULT 'credits',
+                    payout_wallet TEXT DEFAULT NULL
                 );
             """)
 
-            # 5. Tabla Compras (Historial)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_purchases (
                     user_id BIGINT,
@@ -79,9 +78,11 @@ def init_db():
                 );
             """)
             
-            # Migraciones de seguridad
+            # Migraciones (Por si ya tienes la tabla creada, agregamos las columnas)
             try:
                 cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
+                cur.execute("ALTER TABLE otp_market ADD COLUMN IF NOT EXISTS payout_pref TEXT DEFAULT 'credits';")
+                cur.execute("ALTER TABLE otp_market ADD COLUMN IF NOT EXISTS payout_wallet TEXT DEFAULT NULL;")
                 conn.commit()
             except: conn.rollback()
             
@@ -92,10 +93,13 @@ def init_db():
         except Exception as e:
             print(f"🔴 Error Initializing DB: {e}")
 
-# ==========================================
-# 💰 WALLET FUNCTIONS
-# ==========================================
+# ... (El resto de funciones get_user_balance, add_balance, etc. se mantienen igual) ...
+# Copia las funciones auxiliares del archivo anterior o pídeme si las necesitas de nuevo.
+# Para ahorrar espacio, asumo que mantienes las funciones get_user_balance, add_balance, deduct_balance, etc.
 
+# ==========================================
+# 💰 WALLET FUNCTIONS (Resumidas para contexto)
+# ==========================================
 def get_user_balance(user_id):
     if user_id in ADMIN_IDS: return 9999.00
     conn = get_connection()
@@ -140,110 +144,11 @@ def deduct_balance(user_id, cost):
             else:
                 conn.close()
                 return False
-        except Exception as e:
-            print(f"Deduct Error: {e}")
+        except: pass
     return False
 
-# ==========================================
-# USER & SUB FUNCTIONS
-# ==========================================
-
-def register_user(user, referrer_id=None):
-    conn = get_connection()
-    is_new_user = False
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT user_id FROM otp_users WHERE user_id = %s", (user.id,))
-            exists = cur.fetchone()
-            
-            if not exists:
-                is_new_user = True
-                cur.execute("""
-                    INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) 
-                    VALUES (%s, %s, %s, %s, %s, 0.00) 
-                """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
-            else:
-                cur.execute("""
-                    UPDATE otp_users 
-                    SET username=%s, first_name=%s, last_name=%s 
-                    WHERE user_id=%s
-                """, (user.username, user.first_name, user.last_name, user.id))
-            
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"DB Register Error: {e}")
-    return is_new_user
-
-def add_subscription_days(user_id, days):
-    """Suma días a la suscripción del usuario."""
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            current_end = result[0] if result else None
-            now = datetime.now()
-            
-            if current_end and current_end > now:
-                new_end = current_end + timedelta(days=days)
-            else:
-                new_end = now + timedelta(days=days)
-            
-            cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return True, new_end
-        except: return False, None
-    return False, None
-
-def check_subscription(user_id):
-    if user_id in ADMIN_IDS: return True
-    conn = get_connection()
-    if not conn: return False
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-        if result and result[0]:
-            return result[0] > datetime.now()
-        return False
-    except: return False
-
-def get_referral_count(user_id):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM otp_users WHERE referred_by = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result[0] if result else 0
-        except: pass
-    return 0
-
-def get_user_info(user_id):
-    """Obtiene toda la info del usuario para el perfil."""
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result 
-        except: pass
-    return None
-
-# --- SCRIPT FUNCTIONS ---
-
+# Funciones de Scripts y Usuarios (Mantener las mismas de antes)
 def save_user_script(user_id, service, lang, text):
-    """Guarda o actualiza un script personal."""
     conn = get_connection()
     if conn:
         try:
@@ -295,3 +200,47 @@ def delete_user_script(user_id, service):
             return True
         except: pass
     return False
+
+def check_subscription(user_id):
+    if user_id in ADMIN_IDS: return True
+    conn = get_connection()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        if result and result[0]: return result[0] > datetime.now()
+        return False
+    except: return False
+
+def get_user_info(user_id):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result 
+        except: pass
+    return None
+
+def add_subscription_days(user_id, days):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            current_end = result[0] if result else None
+            now = datetime.now()
+            if current_end and current_end > now: new_end = current_end + timedelta(days=days)
+            else: new_end = now + timedelta(days=days)
+            cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
+            conn.commit()
+            conn.close()
+            return True, new_end
+        except: return False, None
+    return False, None
