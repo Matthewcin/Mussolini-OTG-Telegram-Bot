@@ -47,7 +47,7 @@ TWILIO_APP_URL = os.getenv("TWILIO_APP_URL") or os.getenv("RENDER_EXTERNAL_URL")
 # ==========================================
 # 5. HOODPAY CONFIG
 # ==========================================
-# Soporte dual para KEY o TOKEN (para evitar errores de nombre)
+# Soporte dual para KEY o TOKEN
 HOODPAY_API_KEY = os.getenv("HOODPAY_API_KEY") or os.getenv("HOODPAY_API_TOKEN")
 HOODPAY_BUSINESS_ID = os.getenv("HOODPAY_BUSINESS_ID")
 
@@ -55,22 +55,27 @@ if not HOODPAY_API_KEY:
     print("⚠️ Warning: HOODPAY_API_KEY not found.")
 
 # ==========================================
-# 6. BOT ECONOMY SETTINGS (CRITICO)
+# 6. BOT ECONOMY & PRICING (CRITICO)
 # ==========================================
 
-# Bono por Referido (Saldo que gana quien invita)
+# A) Bono por Referido
 try:
     REFERRAL_BONUS = float(os.getenv("REFERRAL_BONUS", "2.00"))
 except:
     REFERRAL_BONUS = 2.00
 
-# Créditos extra que dan las Keys de tiempo (Opcional)
-# Si creas una key de 30 dias, ¿cuanto saldo extra regalas?
-# Formato: {dias: saldo_extra}
+# B) Créditos extra por Keys de tiempo
 PLAN_CREDITS = {
-    1: 0.00,   # Key de 1 día da $0 saldo
-    7: 2.00,   # Key de 7 días da $2 saldo (Ejemplo)
-    30: 5.00   # Key de 30 días da $5 saldo (Ejemplo)
+    1: 0.00,   # 1 Day key = $0 balance extra
+    7: 2.00,   # 1 Week key = $2 balance extra
+    30: 5.00   # 1 Month key = $5 balance extra
+}
+
+# C) Costos de Uso (PRICING)
+# Esto es lo que faltaba y causaba el error en handlers/call.py
+PRICING = {
+    "call_base": 0.50,      # Costo base por iniciar llamada
+    "call_per_minute": 0.20 # Costo por minuto extra
 }
 
 # ==========================================
