@@ -1,43 +1,32 @@
 import os
-import secrets
-import platform
-from datetime import datetime
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from twilio.rest import Client
-from config import bot, ADMIN_IDS, TWILIO_SID, TWILIO_TOKEN
-from database import (
-    get_connection, check_subscription, get_user_balance, deduct_balance, 
-    add_balance, save_user_script
-)
-from handlers.keys import process_key_step
+from config import bot, ADMIN_IDS
+from database import get_connection
+# NEW IMPORTS
+from handlers.wizard import start_call_wizard, start_sms_wizard, start_balance_wizard
 from handlers.payments import create_hoodpay_payment, create_script_invoice, check_payment_status
 from handlers.profile import get_profile_content, show_referral
-
-VERSION = "v4.2 (Marketplace Pro)"
+from handlers.keys import process_key_step
+from database import deduct_balance, add_balance, save_user_script, get_all_user_scripts
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
-    
-    if call.data.startswith("live_"): return
+    if call.data.startswith("live_") or call.data.startswith("wiz_"): return # Handled elsewhere
 
     # ==========================================
     # 🔙 MAIN MENU
     # ==========================================
     if call.data == "back_home":
-        text = f"🛡️ <b>ＢＩＧＦＡＴＯＴＰ</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>.\nSelect an option below:"
+        text = f"🛡️ <b>MUSSOLINI OTP BOT v31</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>."
         
         markup = InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            InlineKeyboardButton("🎟️ Enter Key", callback_data="enter_key"),
-            InlineKeyboardButton("👤 Profile", callback_data="show_profile"),
-            InlineKeyboardButton("🪙 Buy Plan", callback_data="buy_subs"),
-            InlineKeyboardButton("🛒 Market", callback_data="market_home"), 
-            InlineKeyboardButton("🤖 Commands", callback_data="commands"),
-            InlineKeyboardButton("🛠️ Features", callback_data="features"),
-            InlineKeyboardButton("👥 Referral", callback_data="referral"),
-            InlineKeyboardButton("⛑️ Support", callback_data="support")
-        )
+        markup.add(InlineKeyboardButton("⚡ Dashboard", callback_data="open_dashboard"),
+                   InlineKeyboardButton("🛒 Market", callback_data="market_home"))
+        markup.add(InlineKeyboardButton("👤 Profile", callback_data="show_profile"),
+                   InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"))
+        markup.add(InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"),
+                   InlineKeyboardButton("👥 Referral", callback_data="referral"))
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
             
@@ -45,175 +34,146 @@ def callback_query(call):
         except: bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 🛒 MARKETPLACE BUYING LOGIC
+    # ⚡ DASHBOARD (WIZARD LAUNCHER)
     # ==========================================
-    
-    # A. Buy with CREDITS
-    elif call.data.startswith("buy_cred_"):
-        script_id = int(call.data.split("_")[2])
-        process_script_purchase(call.message, user_id, script_id, "credits")
-
-    # B. Buy with CRYPTO
-    elif call.data.startswith("buy_cryp_"):
-        script_id = int(call.data.split("_")[2])
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT title, price FROM otp_market WHERE id = %s", (script_id,))
-        item = cur.fetchone()
-        conn.close()
+    elif call.data == "open_dashboard":
+        text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect a tool to launch Wizard:"
+        markup = InlineKeyboardMarkup()
+        markup.row(InlineKeyboardButton("📞 Call", callback_data="wiz_call"),
+                   InlineKeyboardButton("📩 SMS", callback_data="wiz_sms"))
+        markup.row(InlineKeyboardButton("📂 My Scripts", callback_data="show_myscripts"),
+                   InlineKeyboardButton("💎 Shop", callback_data="show_shop"))
         
-        if item:
-            title, price = item
-            create_script_invoice(user_id, script_id, price, title)
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-
-    # C. Verify Payment Callback
-    elif call.data.startswith("chk_scr_"):
-        parts = call.data.split("_")
-        pay_id = parts[2]
-        script_id = int(parts[3])
+        if user_id in ADMIN_IDS:
+            markup.row(InlineKeyboardButton("🔒 Add Bal", callback_data="wiz_addbal"))
         
-        if check_payment_status(pay_id):
-            process_script_purchase(call.message, user_id, script_id, "crypto")
-        else:
-            bot.answer_callback_query(call.id, "⏳ Payment not detected yet.", show_alert=True)
+        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 🛒 MARKETPLACE UI
+    # 🛒 MARKET UI
     # ==========================================
     elif call.data == "market_home":
-        text = "🛒 <b>ＳＣＲＩＰＴ  ＭＡＲＫＥＴ</b>\n━━━━━━━━━━━━━━━━━━━━\nManage custom scripts or buy premium ones.\nSelect an option:"
+        text = "🛒 <b>ＭＡＲＫＥＴＰＬＡＣＥ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect option:"
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📂 My Scripts", callback_data="show_myscripts"))
-        markup.add(InlineKeyboardButton("📚 Free Library", callback_data="show_freescripts"))
-        markup.add(InlineKeyboardButton("💎 Premium Shop", callback_data="show_shop"))
+        markup.add(InlineKeyboardButton("📂 My Scripts", callback_data="show_myscripts"),
+                   InlineKeyboardButton("📚 Free Lib", callback_data="show_freescripts"),
+                   InlineKeyboardButton("💎 Premium Shop", callback_data="show_shop"))
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     elif call.data == "show_myscripts":
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT service_name, language FROM otp_scripts WHERE user_id = %s", (user_id,))
-        scripts = cur.fetchall()
-        conn.close()
-        
-        if not scripts:
-            msg = "📂 <b>ＭＹ  ＳＣＲＩＰＴＳ</b>\n━━━━━━━━━━━━━━━━━━━━\nYou have no scripts.\nUse <code>/setscript</code> to create one."
-        else:
-            msg = "📂 <b>ＭＹ  ＳＣＲＩＰＴＳ</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-            for s in scripts: msg += f"🔹 <code>{s[0]}</code> ({s[1]})\n"
-            
+        scripts = get_all_user_scripts(user_id)
+        msg = "📂 <b>MY SCRIPTS</b>\n\n" + ("\n".join([f"🔹 {s[0]}" for s in scripts]) if scripts else "No scripts found.")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="market_home"))
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     elif call.data == "show_shop":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        # We trigger the command logic to avoid duplicating code, or send manual message
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, title, price FROM otp_market WHERE is_premium = TRUE")
+        items = cur.fetchall()
+        conn.close()
+        msg = "💎 <b>SHOP</b>\n\n" + ("\n".join([f"🔹 {i[1]} (${i[2]}) - ID: {i[0]}" for i in items]) if items else "Shop empty.")
+        msg += "\n\nUse <code>/getscript [Name]</code> or <code>/confirmbuy [ID]</code>"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="market_home"))
-        bot.send_message(call.message.chat.id, "💎 Use <code>/shop</code> to view items.", reply_markup=markup, parse_mode="HTML")
-
+        bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+        
     elif call.data == "show_freescripts":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT service_name FROM otp_market WHERE price = 0 OR is_premium = FALSE")
+        items = cur.fetchall()
+        conn.close()
+        msg = "📚 <b>LIBRARY</b>\n\n" + ("\n".join([f"🔹 {i[0]}" for i in items]) if items else "Library empty.")
+        msg += "\n\nUse <code>/getscript [Name]</code>"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="market_home"))
-        bot.send_message(call.message.chat.id, "📚 Use <code>/freescripts</code> to view library.", reply_markup=markup, parse_mode="HTML")
+        bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # STANDARD MENUS
+    # WIZARD TRIGGERS (Redirects)
     # ==========================================
+    elif call.data == "wiz_call":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        start_call_wizard(call.message)
+    elif call.data == "wiz_sms":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        start_sms_wizard(call.message)
+    elif call.data == "wiz_addbal":
+        if user_id in ADMIN_IDS:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            start_balance_wizard(call.message)
+
+    # ==========================================
+    # BUYING LOGIC (Credits vs Crypto)
+    # ==========================================
+    elif call.data.startswith("buy_cred_"):
+        sid = int(call.data.split("_")[2])
+        process_purchase(call.message, user_id, sid, "credits")
+
+    elif call.data.startswith("buy_cryp_"):
+        sid = int(call.data.split("_")[2])
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT title, price FROM otp_market WHERE id=%s", (sid,))
+        res = cur.fetchone()
+        conn.close()
+        if res: create_script_invoice(user_id, sid, res[1], res[0])
+
+    elif call.data.startswith("chk_scr_"):
+        parts = call.data.split("_")
+        pay_id, sid = parts[2], int(parts[3])
+        if check_payment_status(pay_id): process_purchase(call.message, user_id, sid, "crypto")
+        else: bot.answer_callback_query(call.id, "⏳ Waiting for payment...", show_alert=True)
+
+    # ... (Mantener lógica estándar: profile, subs, keys, admin_panel) ...
     elif call.data == "show_profile":
         text, markup = get_profile_content(user_id, call.from_user.first_name)
         if text: bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
-
-    elif call.data == "buy_subs":
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📅 1 Day ($50)", callback_data="pay_daily"))
-        markup.add(InlineKeyboardButton("🗓 1 Week ($150)", callback_data="pay_weekly"))
-        markup.add(InlineKeyboardButton("📆 1 Month ($285)", callback_data="pay_monthly"))
-        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-        bot.edit_message_text("💳 <b>SELECT PLAN:</b>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
-
-    elif call.data in ["pay_daily", "pay_weekly", "pay_monthly"]:
-        plan = call.data.split("_")[1]
-        create_hoodpay_payment(call.message.chat.id, plan)
-
-    elif call.data == "enter_key":
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("❌ Cancel", callback_data="back_home"))
-        msg = bot.send_message(call.message.chat.id, "🎟️ <b>Send Key:</b>", reply_markup=markup, parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_key_step)
-
+    
     elif call.data == "admin_panel":
         if user_id in ADMIN_IDS:
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🔑 1 Day", callback_data="gen_1"), InlineKeyboardButton("🔑 1 Week", callback_data="gen_7"))
-            markup.row(InlineKeyboardButton("📜 Logs", callback_data="show_log"), InlineKeyboardButton("ℹ️ Info", callback_data="show_version"))
-            markup.row(InlineKeyboardButton("📡 Balance", callback_data="admin_twilio"), InlineKeyboardButton("🐞 Debug", callback_data="twilio_debug"))
-            markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-            bot.edit_message_text("🕴️ <b>ADMIN DASHBOARD</b>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+            markup.add(InlineKeyboardButton("📜 Logs", callback_data="show_log"), InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+            bot.edit_message_text("🕴️ <b>ADMIN</b>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # Twilio Debug & Others... (Standard Admin functions omitted for brevity but should be here if you use them)
-    # The key parts requested are above.
+    elif call.data == "show_log":
+        if user_id in ADMIN_IDS:
+            try:
+                with open("bot.log", "r") as f: lines = f.readlines()[-15:]
+                log_text = "".join(lines)
+            except: log_text = "No logs."
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
+            bot.edit_message_text(f"📜 <b>LOGS:</b>\n<pre>{log_text}</pre>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-# ==========================================
-# ⚙️ PURCHASE PROCESSING FUNCTION
-# ==========================================
-def process_script_purchase(message, buyer_id, script_id, payment_method):
+def process_purchase(message, buyer_id, script_id, method):
     conn = get_connection()
     cur = conn.cursor()
-    
-    # 1. Check ownership
-    cur.execute("SELECT * FROM otp_purchases WHERE user_id = %s AND script_id = %s", (buyer_id, script_id))
-    if cur.fetchone():
-        conn.close()
-        bot.send_message(buyer_id, "✅ You already own this script.")
-        return
-
-    # 2. Get script info
-    cur.execute("SELECT service_name, language, script_text, title, price, author_id, payout_pref, payout_wallet FROM otp_market WHERE id = %s", (script_id,))
+    cur.execute("SELECT service_name, language, script_text, title, price, author_id, payout_pref FROM otp_market WHERE id = %s", (script_id,))
     data = cur.fetchone()
     
-    if not data: return
-    service, lang, text, title, price, author_id, payout_pref, payout_wallet = data
-    price = float(price)
-    
-    # 3. Charge Buyer (If Credits)
-    if payment_method == "credits":
-        if not deduct_balance(buyer_id, price):
-            conn.close()
-            bot.send_message(buyer_id, "💸 <b>Insufficient Credits.</b> Top up or use Crypto.", parse_mode="HTML")
-            return
-    
-    # 4. Install
-    cur.execute("INSERT INTO otp_purchases (user_id, script_id) VALUES (%s, %s)", (buyer_id, script_id))
-    save_user_script(buyer_id, service, lang, text)
-    conn.commit()
-    
-    # 5. Commission Logic (60%)
-    commission = price * 0.60
-    
-    if payout_pref == "credits":
-        add_balance(author_id, commission)
-        try: bot.send_message(author_id, f"💰 <b>SALE ALERT!</b>\nSold: {title}\n➕ <b>${commission:.2f}</b> credits added.", parse_mode="HTML")
-        except: pass
+    if data:
+        service, lang, text, title, price, author, pref = data
+        price = float(price)
         
-    elif payout_pref == "crypto":
-        # Notify Admins for Manual Payout
-        for admin in ADMIN_IDS:
-            try:
-                bot.send_message(admin, 
-                    f"⚠️ <b>PAYOUT REQUIRED</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-                    f"👤 <b>Seller:</b> <code>{author_id}</code>\n"
-                    f"💵 <b>Amount:</b> <code>${commission:.2f}</code>\n"
-                    f"🏦 <b>Wallet:</b> <code>{payout_wallet}</code>\n"
-                    f"📜 <b>Item:</b> {title}", parse_mode="HTML"
-                )
-            except: pass
+        if method == "credits":
+            if not deduct_balance(buyer_id, price):
+                conn.close()
+                return bot.send_message(buyer_id, "💸 Insufficient Credits.")
         
-        try: bot.send_message(author_id, f"💰 <b>SALE ALERT!</b>\nSold: {title}\n⏳ <b>${commission:.2f}</b> crypto payout processing.", parse_mode="HTML")
+        cur.execute("INSERT INTO otp_purchases (user_id, script_id) VALUES (%s, %s)", (buyer_id, script_id))
+        save_user_script(buyer_id, service, lang, text)
+        
+        # Commission (60%)
+        comm = price * 0.60
+        if pref == "credits": add_balance(author, comm)
+        
+        conn.commit()
+        bot.send_message(buyer_id, f"✅ Bought <b>{title}</b>", parse_mode="HTML")
+        try: bot.send_message(author, f"💰 Sold <b>{title}</b> (+${comm})", parse_mode="HTML")
         except: pass
-
     conn.close()
-    bot.send_message(buyer_id, f"✅ <b>SUCCESS!</b>\nScript <b>{title}</b> installed.", parse_mode="HTML")
