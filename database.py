@@ -92,7 +92,7 @@ def init_db():
                 );
             """)
             
-            # 7. BOT SETTINGS (NUEVO - GLOBAL CONFIG)
+            # 7. Bot Settings (Global Config)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS bot_settings (
                     setting_key TEXT PRIMARY KEY,
@@ -100,7 +100,7 @@ def init_db():
                 );
             """)
             
-            # === AUTO-GENERAR PLANES DEFAULT ===
+            # Auto-generate default plans if empty
             cur.execute("SELECT COUNT(*) FROM otp_plans")
             if cur.fetchone()[0] == 0:
                 cur.execute("INSERT INTO otp_plans (price, reward_balance) VALUES (10.00, 10.00), (25.00, 30.00), (50.00, 65.00)")
@@ -113,7 +113,7 @@ def init_db():
             print(f"🔴 Init DB Error: {e}")
 
 # ==========================================
-# ⚙️ SETTINGS & GLOBAL FUNCTIONS (NUEVO)
+# ⚙️ SETTINGS & GLOBAL
 # ==========================================
 def get_setting(key):
     conn = get_connection()
@@ -146,7 +146,6 @@ def set_setting(key, value):
     return False
 
 def get_all_users_ids():
-    """Returns a list of all user IDs for broadcasting."""
     conn = get_connection()
     ids = []
     if conn:
@@ -159,7 +158,7 @@ def get_all_users_ids():
     return ids
 
 # ==========================================
-# 💰 WALLET FUNCTIONS
+# 💰 WALLET & USER
 # ==========================================
 def get_user_balance(user_id):
     if user_id in ADMIN_IDS: return 9999.00
@@ -207,9 +206,6 @@ def deduct_balance(user_id, cost):
         except: pass
     return False
 
-# ==========================================
-# USER FUNCTIONS
-# ==========================================
 def register_user(user, referrer_id=None):
     conn = get_connection()
     is_new_user = False
@@ -228,6 +224,49 @@ def register_user(user, referrer_id=None):
         except: pass
     return is_new_user
 
+def check_subscription(user_id):
+    if user_id in ADMIN_IDS: return True
+    conn = get_connection()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+        result = cur.fetchone()
+        conn.close()
+        if result and result[0]: return result[0] > datetime.now()
+        return False
+    except: return False
+
+def add_subscription_days(user_id, days):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            current_end = result[0] if result else None
+            now = datetime.now()
+            if current_end and current_end > now: new_end = current_end + timedelta(days=days)
+            else: new_end = now + timedelta(days=days)
+            cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
+            conn.commit()
+            conn.close()
+            return True, new_end
+        except: return False, None
+    return False, None
+
+def get_user_info(user_id):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result 
+        except: pass
+    return None
+
 def get_referral_count(user_id):
     conn = get_connection()
     if conn:
@@ -241,7 +280,7 @@ def get_referral_count(user_id):
     return 0
 
 # ==========================================
-# WIZARD & SCRIPT HELPERS
+# 📜 SCRIPT FUNCTIONS (THE MISSING PART FIXED)
 # ==========================================
 def get_available_services(user_id):
     conn = get_connection()
@@ -260,6 +299,18 @@ def get_available_services(user_id):
         except: pass
     return services
 
+def get_market_script_by_name(service_name):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, title, price, is_premium, script_text, service_name, language FROM otp_market WHERE service_name ILIKE %s ORDER BY price ASC LIMIT 1", (service_name,))
+            result = cur.fetchone()
+            conn.close()
+            return result
+        except: pass
+    return None
+
 def save_user_script(user_id, service, lang, text):
     conn = get_connection()
     if conn:
@@ -271,6 +322,19 @@ def save_user_script(user_id, service, lang, text):
             return True
         except: pass
     return False
+
+def get_user_script(user_id, service):
+    """Fetches a specific script text for a user."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT script_text, language FROM otp_scripts WHERE user_id = %s AND service_name = %s", (user_id, service.lower()))
+            result = cur.fetchone()
+            conn.close()
+            return result 
+        except: pass
+    return None
 
 def get_all_user_scripts(user_id):
     conn = get_connection()
@@ -284,8 +348,20 @@ def get_all_user_scripts(user_id):
         except: pass
     return []
 
+def delete_user_script(user_id, service):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM otp_scripts WHERE user_id = %s AND service_name = %s", (user_id, service.lower()))
+            conn.commit()
+            conn.close()
+            return True
+        except: pass
+    return False
+
 # ==========================================
-# PLAN & LICENSE MANAGEMENT
+# PLANS & LICENSES
 # ==========================================
 def manage_plan(action, price, reward=0):
     conn = get_connection()
