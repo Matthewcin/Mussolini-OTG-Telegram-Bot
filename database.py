@@ -92,6 +92,18 @@ def init_db():
                 );
             """)
             
+            # === AUTO-GENERAR PLANES DEFAULT SI ESTÁ VACÍO ===
+            cur.execute("SELECT COUNT(*) FROM otp_plans")
+            if cur.fetchone()[0] == 0:
+                print("⚠️ No plans found. Creating DEFAULT plans...")
+                default_plans = [
+                    (10.00, 10.00),  # $10 cuesta $10
+                    (25.00, 30.00),  # $25 te da $30 (Bonus)
+                    (50.00, 65.00)   # $50 te da $65 (Super Bonus)
+                ]
+                for p, r in default_plans:
+                    cur.execute("INSERT INTO otp_plans (price, reward_balance) VALUES (%s, %s)", (p, r))
+            
             conn.commit()
             cur.close()
             conn.close()
@@ -99,10 +111,14 @@ def init_db():
         except Exception as e:
             print(f"🔴 Init DB Error: {e}")
 
-# ==========================================
-# 💰 WALLET FUNCTIONS
-# ==========================================
+# ... (MANTÉN EL RESTO DE FUNCIONES IGUAL: get_user_balance, add_balance, etc.) ...
+# COPIA AQUÍ ABAJO TODAS LAS FUNCIONES QUE YA TENÍAS (get_available_services, manage_plan, create_license, etc.)
+# Para ahorrar espacio en el chat, asumo que las tienes del mensaje anterior.
+# Asegúrate de que `create_license` y `manage_plan` estén aquí.
 
+# ==========================================
+# (RESUMEN DE FUNCIONES NECESARIAS AQUÍ ABAJO)
+# ==========================================
 def get_user_balance(user_id):
     if user_id in ADMIN_IDS: return 9999.00
     conn = get_connection()
@@ -137,7 +153,6 @@ def deduct_balance(user_id, cost):
             cur.execute("SELECT wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
             res = cur.fetchone()
             current = float(res[0]) if res else 0.00
-            
             if current >= cost:
                 new_bal = current - cost
                 cur.execute("UPDATE otp_users SET wallet_balance = %s WHERE user_id = %s", (new_bal, user_id))
@@ -150,10 +165,6 @@ def deduct_balance(user_id, cost):
         except: pass
     return False
 
-# ==========================================
-# USER & SUB FUNCTIONS
-# ==========================================
-
 def register_user(user, referrer_id=None):
     conn = get_connection()
     is_new_user = False
@@ -164,13 +175,9 @@ def register_user(user, referrer_id=None):
             exists = cur.fetchone()
             if not exists:
                 is_new_user = True
-                cur.execute("""
-                    INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) 
-                    VALUES (%s, %s, %s, %s, %s, 0.00) 
-                """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
+                cur.execute("INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) VALUES (%s, %s, %s, %s, %s, 0.00)", (user.id, user.username, user.first_name, user.last_name, referrer_id))
             else:
-                cur.execute("UPDATE otp_users SET username=%s, first_name=%s, last_name=%s WHERE user_id=%s", 
-                            (user.username, user.first_name, user.last_name, user.id))
+                cur.execute("UPDATE otp_users SET username=%s, first_name=%s, last_name=%s WHERE user_id=%s", (user.username, user.first_name, user.last_name, user.id))
             conn.commit()
             conn.close()
         except: pass
@@ -230,10 +237,6 @@ def get_referral_count(user_id):
             return result[0] if result else 0
         except: pass
     return 0
-
-# ==========================================
-# WIZARD & SCRIPT HELPERS
-# ==========================================
 
 def get_available_services(user_id):
     conn = get_connection()
@@ -312,23 +315,15 @@ def delete_user_script(user_id, service):
         except: pass
     return False
 
-# ==========================================
-# PLAN & LICENSE MANAGEMENT (ADMIN)
-# ==========================================
-
 def manage_plan(action, price, reward=0):
     conn = get_connection()
     if not conn: return False
     try:
         cur = conn.cursor()
         if action == "add":
-            cur.execute("""
-                INSERT INTO otp_plans (price, reward_balance) VALUES (%s, %s)
-                ON CONFLICT (price) DO UPDATE SET reward_balance = EXCLUDED.reward_balance
-            """, (price, reward))
+            cur.execute("INSERT INTO otp_plans (price, reward_balance) VALUES (%s, %s) ON CONFLICT (price) DO UPDATE SET reward_balance = EXCLUDED.reward_balance", (price, reward))
         elif action == "del":
             cur.execute("DELETE FROM otp_plans WHERE price = %s", (price,))
-        
         conn.commit()
         conn.close()
         return True
@@ -361,13 +356,11 @@ def get_plan_by_id(plan_id):
     return None
 
 def create_license(days):
-    """Generates a unique license key and saves it to DB."""
     key_code = "KEY-" + str(uuid.uuid4())[:8].upper()
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
-            # Status active. credits_amount depends on PLAN_CREDITS in config when redeemed
             cur.execute("INSERT INTO otp_licenses (key_code, duration_days, status) VALUES (%s, %s, 'active')", (key_code, days))
             conn.commit()
             conn.close()
