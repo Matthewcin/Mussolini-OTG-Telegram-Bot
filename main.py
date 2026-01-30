@@ -5,7 +5,10 @@ from config import bot
 from database import init_db
 from keep_alive import start_server
 
-# Import Handlers
+# IMPORTAR MANTENIMIENTO PRIMERO
+import handlers.maintenance 
+
+# IMPORTAR RESTO
 import handlers.start
 import handlers.callbacks
 import handlers.payments
@@ -18,22 +21,14 @@ import handlers.profile
 import handlers.sms
 import handlers.cvv
 import handlers.live
-import handlers.wizard # <--- NEW IMPORT
+import handlers.wizard
 
 logging.basicConfig(level=logging.INFO)
 
 def setup_historical_logs():
     log_file = "bot.log"
     if not os.path.exists(log_file):
-        HISTORY = [
-            ("2026-01-01", "09:00:00", "INFO", "SYSTEM", "MussoliniOTPBot v1.0 initialized."),
-            ("2026-01-15", "18:00:00", "INFO", "FEAT", "Added Neural TTS Support."),
-            ("2026-01-25", "09:00:00", "INFO", "MARKET", "Marketplace Backend Online."),
-            ("2026-01-30", "08:00:00", "INFO", "SYSTEM", "v31.0 Stable Online.")
-        ]
-        with open(log_file, "w") as f:
-            for d, t, l, m, msg in HISTORY:
-                f.write(f"[{d} {t}] [{l.ljust(7)}] [{m.ljust(8)}] {msg}\n")
+        with open(log_file, "w") as f: f.write("System Init.\n")
 
 if __name__ == "__main__":
     print("🚀 STARTING...")
