@@ -1,25 +1,23 @@
 import os
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import bot, ADMIN_IDS
-from database import get_connection
-# NEW IMPORTS
+from database import get_connection, add_balance, get_all_plans, get_plan_by_id
 from handlers.wizard import start_call_wizard, start_sms_wizard, start_balance_wizard
-from handlers.payments import create_hoodpay_payment, create_script_invoice, check_payment_status
+from handlers.payments import create_dynamic_plan_invoice, create_script_invoice, check_payment_status
 from handlers.profile import get_profile_content, show_referral
 from handlers.keys import process_key_step
-from database import deduct_balance, add_balance, save_user_script, get_all_user_scripts
+from database import deduct_balance, save_user_script, get_all_user_scripts
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
-    if call.data.startswith("live_") or call.data.startswith("wiz_"): return # Handled elsewhere
+    if call.data.startswith("live_") or call.data.startswith("wiz_"): return
 
     # ==========================================
     # 🔙 MAIN MENU
     # ==========================================
     if call.data == "back_home":
         text = f"🛡️ <b>MUSSOLINI OTP BOT v31</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>."
-        
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(InlineKeyboardButton("⚡ Dashboard", callback_data="open_dashboard"),
                    InlineKeyboardButton("🛒 Market", callback_data="market_home"))
@@ -29,32 +27,84 @@ def callback_query(call):
                    InlineKeyboardButton("👥 Referral", callback_data="referral"))
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
-            
         try: bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
         except: bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # ⚡ DASHBOARD (WIZARD LAUNCHER)
+    # 🪙 DEPOSIT MENU (DYNAMIC PLANS FROM DB)
+    # ==========================================
+    elif call.data == "buy_subs":
+        plans = get_all_plans()
+        
+        if not plans:
+            text = "🪙 <b>DEPOSIT</b>\n━━━━━━━━━━━━━━━━━━━━\nNo plans configured yet.\nContact Admin."
+        else:
+            text = "🪙 <b>SELECT TOP-UP PLAN</b>\n━━━━━━━━━━━━━━━━━━━━\nChoose amount to deposit:"
+        
+        markup = InlineKeyboardMarkup()
+        for p in plans:
+            # p = (id, price, reward)
+            # Example Button: "$12 (Get $5)"
+            btn_text = f"💵 ${p[1]} (Get ${p[2]})"
+            markup.add(InlineKeyboardButton(btn_text, callback_data=f"plan_buy_{p[0]}"))
+            
+        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
+    # ==========================================
+    # 💸 PROCESS PLAN PURCHASE
+    # ==========================================
+    elif call.data.startswith("plan_buy_"):
+        plan_id = int(call.data.split("_")[2])
+        create_dynamic_plan_invoice(user_id, plan_id)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+
+    elif call.data.startswith("chk_plan_"):
+        parts = call.data.split("_")
+        pay_id, plan_id = parts[2], int(parts[3])
+        
+        if check_payment_status(pay_id):
+            # Fetch reward amount from DB
+            plan = get_plan_by_id(plan_id)
+            if plan:
+                reward = float(plan[1]) # plan[0]=price, plan[1]=reward
+                add_balance(user_id, reward)
+                bot.edit_message_text(f"✅ <b>SUCCESS!</b>\nAdded ${reward} to your wallet.", call.message.chat.id, call.message.message_id, parse_mode="HTML")
+        else:
+            bot.answer_callback_query(call.id, "⏳ Waiting for payment...", show_alert=True)
+
+    # ==========================================
+    # ⚡ DASHBOARD
     # ==========================================
     elif call.data == "open_dashboard":
-        text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect a tool to launch Wizard:"
+        text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect tool:"
         markup = InlineKeyboardMarkup()
         markup.row(InlineKeyboardButton("📞 Call", callback_data="wiz_call"),
                    InlineKeyboardButton("📩 SMS", callback_data="wiz_sms"))
-        markup.row(InlineKeyboardButton("📂 My Scripts", callback_data="show_myscripts"),
+        markup.row(InlineKeyboardButton("📂 Scripts", callback_data="show_myscripts"),
                    InlineKeyboardButton("💎 Shop", callback_data="show_shop"))
         
         if user_id in ADMIN_IDS:
-            markup.row(InlineKeyboardButton("🔒 Add Bal", callback_data="wiz_addbal"))
+            markup.row(InlineKeyboardButton("🔒 Add Bal", callback_data="wiz_addbal"),
+                       InlineKeyboardButton("🔒 List Plans", callback_data="adm_list_pl")) # Shortcut
         
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+    
+    # Shortcut for Admin List Plans
+    elif call.data == "adm_list_pl":
+        if user_id in ADMIN_IDS:
+            plans = get_all_plans()
+            msg = "📋 <b>PLANS:</b>\n" + ("\n".join([f"• ${p[1]} -> ${p[2]}" for p in plans]) if plans else "None")
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="open_dashboard"))
+            bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
     # 🛒 MARKET UI
     # ==========================================
     elif call.data == "market_home":
-        text = "🛒 <b>ＭＡＲＫＥＴＰＬＡＣＥ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect option:"
+        text = "🛒 <b>ＭＡＲＫＥＴＰＬＡＣＥ</b>"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("📂 My Scripts", callback_data="show_myscripts"),
                    InlineKeyboardButton("📚 Free Lib", callback_data="show_freescripts"),
@@ -94,7 +144,7 @@ def callback_query(call):
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # WIZARD TRIGGERS (Redirects)
+    # WIZARD TRIGGERS
     # ==========================================
     elif call.data == "wiz_call":
         bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -129,11 +179,22 @@ def callback_query(call):
         if check_payment_status(pay_id): process_purchase(call.message, user_id, sid, "crypto")
         else: bot.answer_callback_query(call.id, "⏳ Waiting for payment...", show_alert=True)
 
-    # ... (Mantener lógica estándar: profile, subs, keys, admin_panel) ...
+    # ==========================================
+    # STANDARD FEATURES
+    # ==========================================
     elif call.data == "show_profile":
         text, markup = get_profile_content(user_id, call.from_user.first_name)
         if text: bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
     
+    elif call.data == "enter_key":
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("❌ Cancel", callback_data="back_home"))
+        msg = bot.send_message(call.message.chat.id, "🎟️ <b>Send Key:</b>", reply_markup=markup, parse_mode="HTML")
+        bot.register_next_step_handler(msg, process_key_step)
+
+    elif call.data == "referral":
+        show_referral(call.message)
+
     elif call.data == "admin_panel":
         if user_id in ADMIN_IDS:
             markup = InlineKeyboardMarkup()
