@@ -10,7 +10,7 @@ from handlers.payments import create_hoodpay_payment
 from handlers.profile import get_profile_content, show_referral
 
 # Versión del Sistema
-VERSION = "v3.6 (Twilio Debugger Edition)"
+VERSION = "v3.7 (Debug Fixed)"
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -150,10 +150,16 @@ Join our channel for:
                     elif c.status in ['ringing', 'in-progress']: icon = "📞"
                     else: icon = "❓"
                     
-                    # Dirección (Entrante/Saliente)
+                    # Safe check para 'to' (Aquí estaba el error)
+                    to_num = c.to[-4:] if c.to else "Unk"
+                    
+                    # Safe check para 'duration'
+                    dur = c.duration if c.duration else "0"
+                    
+                    # Dirección
                     direction = "Out ➚" if "outbound" in c.direction else "In ➘"
                     
-                    calls_msg += f"{icon} `{c.to[-4:]}` | {c.status} | {c.duration}s | {direction}\n"
+                    calls_msg += f"{icon} `...{to_num}` | {c.status} | {dur}s | {direction}\n"
             else:
                 calls_msg = "No recent calls found."
 
@@ -163,7 +169,8 @@ Join our channel for:
             
             if alerts:
                 for a in alerts:
-                    alerts_msg += f"🔴 **Error {a.error_code}**\n_{a.alert_text[:50]}..._\n"
+                    txt = a.alert_text if a.alert_text else "No details"
+                    alerts_msg += f"🔴 **Error {a.error_code}**\n_{txt[:50]}..._\n"
             else:
                 alerts_msg = "✅ No recent critical errors."
 
@@ -184,6 +191,8 @@ Join our channel for:
             bot.edit_message_text(full_msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
         except Exception as e:
+            import traceback
+            print(traceback.format_exc()) # Ver error en consola también
             bot.edit_message_text(f"❌ Error fetching logs: {e}", call.message.chat.id, call.message.message_id)
 
     # ==========================================
