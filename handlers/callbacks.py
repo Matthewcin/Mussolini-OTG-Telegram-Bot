@@ -10,14 +10,13 @@ from handlers.payments import create_hoodpay_payment
 from handlers.profile import get_profile_content, show_referral
 
 # Versión del Sistema
-VERSION = "v3.5 (Live Panel & Wallet Edition)"
+VERSION = "v3.6 (Twilio Debugger Edition)"
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
     
     # ⚠️ IMPORTANTE: Si el callback empieza con "live_", lo ignoramos en este archivo
-    # para que lo maneje handlers/live.py (si está importado en main.py antes o después).
     if call.data.startswith("live_"):
         return
 
@@ -38,7 +37,6 @@ def callback_query(call):
             InlineKeyboardButton("👥 Referral", callback_data="referral"),
             InlineKeyboardButton("⛑️ Support", callback_data="support")
         )
-        # Botón de Admin solo si es admin
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
             
@@ -55,9 +53,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, "⚠️ Profile not found. Type /start", show_alert=True)
 
     elif call.data == "referral":
-        # Borramos el mensaje anterior para enviar uno nuevo limpio
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        # Simulamos que el usuario envió el comando /referral
         call.message.from_user = call.from_user
         show_referral(call.message)
 
@@ -77,7 +73,6 @@ Join our channel for:
 👉 **Click below to join:**
         """
         markup = InlineKeyboardMarkup()
-        # REEMPLAZA ESTOS LINKS CON LOS TUYOS REALES
         markup.add(InlineKeyboardButton("🚀 Join Channel", url="https://t.me/TuCanalAqui"))
         markup.add(InlineKeyboardButton("💬 Join Chat Group", url="https://t.me/TuGrupoAqui"))
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
@@ -93,9 +88,9 @@ Join our channel for:
             # Fila 1: Generar Keys
             markup.row(InlineKeyboardButton("🔑 1 Day", callback_data="gen_1"), InlineKeyboardButton("🔑 1 Week", callback_data="gen_7"))
             # Fila 2: Logs y Version
-            markup.row(InlineKeyboardButton("📜 View Logs", callback_data="show_log"), InlineKeyboardButton("ℹ️ System Info", callback_data="show_version"))
-            # Fila 3: Twilio
-            markup.add(InlineKeyboardButton("📡 Twilio Balance & Info", callback_data="admin_twilio"))
+            markup.row(InlineKeyboardButton("📜 Bot Logs", callback_data="show_log"), InlineKeyboardButton("ℹ️ System Info", callback_data="show_version"))
+            # Fila 3: Twilio (Saldo y Debugger)
+            markup.row(InlineKeyboardButton("📡 Balance", callback_data="admin_twilio"), InlineKeyboardButton("🐞 Twilio Debug", callback_data="twilio_debug"))
             # Fila 4: Volver
             markup.add(InlineKeyboardButton("⬅ Back to Menu", callback_data="back_home"))
             
@@ -104,107 +99,127 @@ Join our channel for:
             bot.answer_callback_query(call.id, "⛔ Access Denied")
 
     # ==========================================
-    # 📡 ADMIN TWILIO CHECKER
+    # 📡 ADMIN TWILIO CHECKER (SALDO)
     # ==========================================
     elif call.data == "admin_twilio":
         if user_id not in ADMIN_IDS: return
 
-        bot.answer_callback_query(call.id, "🔄 Fetching data from Twilio...")
+        bot.answer_callback_query(call.id, "🔄 Fetching Balance...")
         
         try:
             client = Client(TWILIO_SID, TWILIO_TOKEN)
-            
-            # 1. Obtener Info de Cuenta (Saldo y Estado)
             try:
                 balance_data = client.api.v2010.accounts(TWILIO_SID).balance.fetch()
                 balance = f"{balance_data.balance} {balance_data.currency}"
             except:
-                balance = "Unknown (Check Console)"
+                balance = "Unknown"
 
             account = client.api.v2010.accounts(TWILIO_SID).fetch()
             status = account.status.upper()
-            type_acc = account.type.upper() # Trial o Full
+            type_acc = account.type.upper()
 
-            # 2. Obtener Lista de Números (Límite 10)
-            numbers = client.incoming_phone_numbers.list(limit=10)
-            nums_text = ""
-            if numbers:
-                for n in numbers:
-                    cap = []
-                    if n.capabilities.get('voice'): cap.append("🎤")
-                    if n.capabilities.get('sms'): cap.append("📩")
-                    nums_text += f"🔹 `{n.phone_number}` {' '.join(cap)}\n"
-            else:
-                nums_text = "❌ No numbers found."
-
-            info_msg = f"""
-📡 **TWILIO STATUS REPORT**
-━━━━━━━━━━━━━━━━━━━━
-💰 **Balance:** `{balance}`
-📊 **Status:** {status}
-🏷 **Type:** {type_acc}
-
-📱 **Active Numbers:**
-{nums_text}
-            """
+            info_msg = f"📡 **TWILIO STATUS**\n━━━━━━━━\n💰 **Balance:** `{balance}`\n📊 **Status:** {status}\n🏷 **Type:** {type_acc}"
             
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("⬅ Back to Admin", callback_data="admin_panel"))
-            
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
             bot.edit_message_text(info_msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
         except Exception as e:
-            bot.edit_message_text(f"❌ **Twilio API Error:**\n`{str(e)}`\n\nCheck your SID/Token in config.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"❌ API Error: {e}", call.message.chat.id, call.message.message_id)
 
     # ==========================================
-    # 📜 ADMIN LOGS VIEWER
+    # 🐞 TWILIO DEBUGGER (HISTORIAL DE LLAMADAS)
+    # ==========================================
+    elif call.data == "twilio_debug":
+        if user_id not in ADMIN_IDS: return
+        
+        bot.answer_callback_query(call.id, "🔄 Fetching Twilio Logs...")
+        
+        try:
+            client = Client(TWILIO_SID, TWILIO_TOKEN)
+            
+            # 1. Obtener últimas 5 llamadas
+            calls = client.calls.list(limit=5)
+            calls_msg = ""
+            
+            if calls:
+                for c in calls:
+                    # Icono según estado
+                    if c.status == 'completed': icon = "✅"
+                    elif c.status in ['busy', 'no-answer', 'failed']: icon = "❌"
+                    elif c.status in ['ringing', 'in-progress']: icon = "📞"
+                    else: icon = "❓"
+                    
+                    # Dirección (Entrante/Saliente)
+                    direction = "Out ➚" if "outbound" in c.direction else "In ➘"
+                    
+                    calls_msg += f"{icon} `{c.to[-4:]}` | {c.status} | {c.duration}s | {direction}\n"
+            else:
+                calls_msg = "No recent calls found."
+
+            # 2. Obtener últimas 3 alertas (Errores)
+            alerts = client.monitor.v1.alerts.list(limit=3)
+            alerts_msg = ""
+            
+            if alerts:
+                for a in alerts:
+                    alerts_msg += f"🔴 **Error {a.error_code}**\n_{a.alert_text[:50]}..._\n"
+            else:
+                alerts_msg = "✅ No recent critical errors."
+
+            full_msg = f"""
+🐞 **TWILIO DEBUGGER**
+━━━━━━━━━━━━━━━━━━━━
+📞 **Last 5 Calls:**
+{calls_msg}
+
+⚠️ **Recent Alerts:**
+{alerts_msg}
+            """
+            
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🔄 Refresh", callback_data="twilio_debug"))
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
+            
+            bot.edit_message_text(full_msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+        except Exception as e:
+            bot.edit_message_text(f"❌ Error fetching logs: {e}", call.message.chat.id, call.message.message_id)
+
+    # ==========================================
+    # 📜 ADMIN BOT LOGS (ARCHIVO LOCAL)
     # ==========================================
     elif call.data == "show_log":
         if user_id not in ADMIN_IDS: return
         
         try:
-            # Intentamos leer el archivo bot.log
             if os.path.exists("bot.log"):
                 with open("bot.log", "r") as f:
                     lines = f.readlines()
-                    # Mostramos solo las últimas 15 líneas para no saturar
-                    last_lines = "".join(lines[-15:]) 
-                
-                log_text = f"📜 **SYSTEM LOGS (Last 15 lines):**\n\n```\n{last_lines}```"
+                    last_lines = "".join(lines[-10:]) # Últimas 10 líneas
+                log_text = f"📜 **SYSTEM LOGS:**\n\n```\n{last_lines}```"
             else:
-                log_text = "⚠️ **Log file not found.** (No activity yet or file missing)"
+                log_text = "⚠️ **Log file not found.**"
 
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🔄 Refresh Logs", callback_data="show_log"))
-            markup.add(InlineKeyboardButton("⬅ Back to Admin", callback_data="admin_panel"))
-            
+            markup.add(InlineKeyboardButton("🔄 Refresh", callback_data="show_log"))
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
             bot.edit_message_text(log_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-            
-        except Exception as e:
-            bot.answer_callback_query(call.id, f"Error reading logs: {e}")
+        except: pass
 
     # ==========================================
     # ℹ️ SYSTEM INFO / VERSION
     # ==========================================
     elif call.data == "show_version":
         if user_id not in ADMIN_IDS: return
-        
         sys_info = f"Python {platform.python_version()} on {platform.system()}"
-        
-        text = f"""
-ℹ️ **SYSTEM INFORMATION**
-━━━━━━━━━━━━━━━━━━
-🤖 **Bot Version:** `{VERSION}`
-🐍 **Environment:** {sys_info}
-📡 **Server:** Render Cloud / Linux
-🟢 **Status:** Online & Listening
-        """
+        text = f"ℹ️ **SYSTEM INFO**\n━━━━━━━━\n🤖 **Ver:** `{VERSION}`\n🐍 **Env:** {sys_info}\n📡 **Server:** Render Cloud"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     # ==========================================
-    # 🔑 GENERAR KEYS (ADMIN)
+    # 🔑 GENERAR KEYS
     # ==========================================
     elif call.data.startswith("gen_"):
         if user_id not in ADMIN_IDS: return
@@ -218,14 +233,10 @@ Join our channel for:
         
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back to Admin", callback_data="admin_panel"))
-        
-        bot.edit_message_text(
-            f"✅ **Key Created Successfully!**\n\n🔑 Code: `{new_key}`\n⏳ Duration: {days} Days", 
-            call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown"
-        )
+        bot.edit_message_text(f"✅ **Key Created!**\nCode: `{new_key}`\nDays: {days}", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     # ==========================================
-    # ℹ️ MENÚS DE INFORMACIÓN Y AYUDA
+    # ℹ️ MENÚS INFO (FEATURES, COMMANDS, ETC)
     # ==========================================
     elif call.data == "commands":
         text = """
@@ -233,30 +244,30 @@ Join our channel for:
 
 👤 **User:**
 `/start` - Main Menu
-`/profile` - Check Credits & Sub
-`/call [number] [service]` - OTP Call ($0.50)
-`/sms [number] [service]` - Warning SMS ($0.25)
-`/cvv [number] [bank]` - CVV Mode ($0.50)
+`/profile` - Check Credits
+`/call [number] [service]` - OTP Call
+`/sms [number] [service]` - SMS Warning
+`/cvv [number] [bank]` - CVV Mode
 `/setscript` - Custom Voice
 `/myscripts` - Manage Scripts
 `/clean` - Delete History
 
 👮‍♂️ **Admin:**
-`/create [days]` - Generate Key
-`/addbalance [id] [amount]` - Give Money
+`/create [days]` - Gen Key
+`/addbalance [id] [amount]` - Add Credit
         """
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     
     elif call.data == "features":
-        text = "🛠️ **FEATURES**\n\n• **Neural Voice:** Native accents (US, MX, ES, BR).\n• **Live Panel:** Approve/Reject codes in real-time.\n• **Wallet System:** Pay per use credits.\n• **SMS:** Warmup messages.\n• **CVV Mode:** Capture 3 digits."
+        text = "🛠️ **FEATURES**\n\n• **Neural Voice:** Native accents.\n• **Live Panel:** Approve/Reject in real-time.\n• **Wallet:** Credit system.\n• **Debug:** View Twilio logs."
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "support":
-        text = "⛑️ **SUPPORT**\n\nNeed help with a payment or setup?\n\nContact Owner: @MatthewOwner\n_Response time: 2-4 hours_"
+        text = "⛑️ **SUPPORT**\n\nContact: @MatthewOwner"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -269,9 +280,8 @@ Join our channel for:
     # ==========================================
     elif call.data == "enter_key":
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("❌ Cancel / Back", callback_data="back_home"))
-        
-        msg = bot.send_message(call.message.chat.id, "🎟️ **REDEEM LICENSE**\n\nPlease paste your Key below (e.g., `KEY-XXXX`):", reply_markup=markup, parse_mode="Markdown")
+        markup.add(InlineKeyboardButton("❌ Cancel", callback_data="back_home"))
+        msg = bot.send_message(call.message.chat.id, "🎟️ **Send Key:**", reply_markup=markup)
         bot.register_next_step_handler(msg, process_key_step)
 
     elif call.data == "buy_subs":
@@ -280,8 +290,7 @@ Join our channel for:
         markup.add(InlineKeyboardButton("🗓 1 Week ($150)", callback_data="pay_weekly"))
         markup.add(InlineKeyboardButton("📆 1 Month ($285)", callback_data="pay_monthly"))
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-        
-        bot.edit_message_text("💳 **SELECT SUBSCRIPTION PLAN**\n\nChoose your license duration. Activation is automatic.", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text("💳 **Select Plan:**", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data in ["pay_daily", "pay_weekly", "pay_monthly", "pay_dev_test"]:
         plan = call.data.split("_")[1]
