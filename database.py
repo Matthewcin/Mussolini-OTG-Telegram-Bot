@@ -227,8 +227,23 @@ def get_referral_count(user_id):
         except: pass
     return 0
 
+def get_user_info(user_id):
+    """Obtiene toda la info del usuario para el perfil."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result 
+        except: pass
+    return None
+
 # --- SCRIPT FUNCTIONS ---
+
 def save_user_script(user_id, service, lang, text):
+    """Guarda o actualiza un script personal."""
     conn = get_connection()
     if conn:
         try:
