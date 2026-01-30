@@ -33,12 +33,12 @@ def admin_add_balance(message: Message):
         bot.reply_to(message, "❌ Invalid numbers.")
 
 # ==========================================
-# 🛠️ PLAN MANAGEMENT COMMANDS
+# 🛠️ DYNAMIC PLAN MANAGEMENT
 # ==========================================
 
 @bot.message_handler(commands=['addplan', 'editplan'])
 def admin_add_plan(message: Message):
-    # Uso: /addplan 12 5 (Precio 12, da 5 de saldo)
+    # Usage: /addplan 12 5 (Price 12, gives 5 balance)
     if message.from_user.id not in ADMIN_IDS: return
 
     try:
@@ -50,7 +50,7 @@ def admin_add_plan(message: Message):
         reward = float(args[2])
         
         if manage_plan("add", price, reward):
-            bot.reply_to(message, f"✅ **Plan Saved!**\n\nCost: **${price}**\nReward: **${reward}** Balance", parse_mode="Markdown")
+            bot.reply_to(message, f"✅ **Plan Saved!**\n\nCost: **${price}**\nReward: **${reward}** Credits", parse_mode="Markdown")
         else:
             bot.reply_to(message, "❌ Error saving plan.")
             
@@ -59,7 +59,7 @@ def admin_add_plan(message: Message):
 
 @bot.message_handler(commands=['delplan'])
 def admin_del_plan(message: Message):
-    # Uso: /delplan 12
+    # Usage: /delplan 12
     if message.from_user.id not in ADMIN_IDS: return
 
     try:
@@ -83,7 +83,7 @@ def admin_list_plans(message: Message):
     
     plans = get_all_plans()
     if not plans:
-        return bot.reply_to(message, "📭 No plans configured.")
+        return bot.reply_to(message, "📭 No plans configured.", parse_mode="Markdown")
         
     text = "📋 **CURRENT PLANS**\n━━━━━━━━━━━━━━━━\n"
     for p in plans:
