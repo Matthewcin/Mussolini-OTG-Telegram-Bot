@@ -10,7 +10,7 @@ from handlers.payments import create_hoodpay_payment
 from handlers.profile import get_profile_content, show_referral
 
 # Versión del Sistema
-VERSION = "v3.7 (Debug Fixed)"
+VERSION = "v3.8 (Extended Debugger)"
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -128,59 +128,60 @@ Join our channel for:
             bot.edit_message_text(f"❌ API Error: {e}", call.message.chat.id, call.message.message_id)
 
     # ==========================================
-    # 🐞 TWILIO DEBUGGER (HISTORIAL DE LLAMADAS)
+    # 🐞 TWILIO DEBUGGER (HISTORIAL DE LLAMADAS 20)
     # ==========================================
     elif call.data == "twilio_debug":
         if user_id not in ADMIN_IDS: return
         
-        bot.answer_callback_query(call.id, "🔄 Fetching Twilio Logs...")
+        bot.answer_callback_query(call.id, "🔄 Fetching last 20 logs...")
         
         try:
             client = Client(TWILIO_SID, TWILIO_TOKEN)
             
-            # 1. Obtener últimas 5 llamadas
-            calls = client.calls.list(limit=5)
+            # 1. Obtener últimas 20 llamadas (CAMBIADO DE 5 A 20)
+            calls = client.calls.list(limit=20)
             calls_msg = ""
             
             if calls:
                 for c in calls:
                     # Icono según estado
                     if c.status == 'completed': icon = "✅"
-                    elif c.status in ['busy', 'no-answer', 'failed']: icon = "❌"
-                    elif c.status in ['ringing', 'in-progress']: icon = "📞"
+                    elif c.status in ['busy', 'no-answer', 'failed', 'canceled']: icon = "❌"
+                    elif c.status in ['ringing', 'in-progress', 'queued']: icon = "📞"
                     else: icon = "❓"
                     
-                    # Safe check para 'to' (Aquí estaba el error)
+                    # Safe check para 'to'
                     to_num = c.to[-4:] if c.to else "Unk"
                     
                     # Safe check para 'duration'
                     dur = c.duration if c.duration else "0"
                     
-                    # Dirección
-                    direction = "Out ➚" if "outbound" in c.direction else "In ➘"
-                    
-                    calls_msg += f"{icon} `...{to_num}` | {c.status} | {dur}s | {direction}\n"
+                    # Formato compacto para que quepan 20
+                    # Ej: ✅ ...4280 | 12s
+                    calls_msg += f"{icon} `...{to_num}` | {c.status} ({dur}s)\n"
             else:
                 calls_msg = "No recent calls found."
 
-            # 2. Obtener últimas 3 alertas (Errores)
-            alerts = client.monitor.v1.alerts.list(limit=3)
+            # 2. Obtener últimas 5 alertas (AUMENTADO DE 3 A 5)
+            # No ponemos 20 aquí porque las alertas tienen mucho texto y Telegram daría error.
+            alerts = client.monitor.v1.alerts.list(limit=5)
             alerts_msg = ""
             
             if alerts:
                 for a in alerts:
                     txt = a.alert_text if a.alert_text else "No details"
-                    alerts_msg += f"🔴 **Error {a.error_code}**\n_{txt[:50]}..._\n"
+                    # Cortamos el texto a 40 caracteres para ahorrar espacio
+                    alerts_msg += f"🔴 **Err {a.error_code}:** _{txt[:40]}..._\n"
             else:
                 alerts_msg = "✅ No recent critical errors."
 
             full_msg = f"""
-🐞 **TWILIO DEBUGGER**
+🐞 **TWILIO DEBUGGER (Last 20)**
 ━━━━━━━━━━━━━━━━━━━━
-📞 **Last 5 Calls:**
+📞 **Recent Calls:**
 {calls_msg}
 
-⚠️ **Recent Alerts:**
+⚠️ **Recent Alerts (Last 5):**
 {alerts_msg}
             """
             
@@ -192,7 +193,7 @@ Join our channel for:
 
         except Exception as e:
             import traceback
-            print(traceback.format_exc()) # Ver error en consola también
+            print(traceback.format_exc()) 
             bot.edit_message_text(f"❌ Error fetching logs: {e}", call.message.chat.id, call.message.message_id)
 
     # ==========================================
@@ -205,7 +206,7 @@ Join our channel for:
             if os.path.exists("bot.log"):
                 with open("bot.log", "r") as f:
                     lines = f.readlines()
-                    last_lines = "".join(lines[-10:]) # Últimas 10 líneas
+                    last_lines = "".join(lines[-15:]) # Últimas 15 líneas
                 log_text = f"📜 **SYSTEM LOGS:**\n\n```\n{last_lines}```"
             else:
                 log_text = "⚠️ **Log file not found.**"
