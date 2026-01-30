@@ -1,129 +1,122 @@
 import requests
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import bot, HOODPAY_API_KEY, HOODPAY_BUSINESS_ID
+from config import bot, HOODPAY_API_TOKEN, HOODPAY_MERCHANT_ID
 from database import get_plan_by_id
 
-API_URL = "https://api.hoodpay.io/v1/payment"
+# ==========================================
+# 💸 HOODPAY INTEGRATION (CORREGIDO)
+# ==========================================
 
-# ==========================================
-# 1. DYNAMIC PLAN INVOICE (DB BASED)
-# ==========================================
 def create_dynamic_plan_invoice(user_id, plan_id):
-    # Fetch plan details from DB
-    plan = get_plan_by_id(plan_id)
+    """Crea un link de pago para un Plan de Saldo."""
+    
+    # 1. Obtener datos del plan
+    plan = get_plan_by_id(plan_id) # (price, reward)
     if not plan:
-        bot.send_message(user_id, "❌ Plan no longer exists.")
-        return
+        return bot.send_message(user_id, "❌ Error: Plan not found.")
 
-    price, reward = plan
-    price = float(price)
-    reward = float(reward)
+    price = float(plan[0])
+    reward = float(plan[1])
+    
+    # 2. Verificar Variables
+    if not HOODPAY_API_TOKEN or not HOODPAY_MERCHANT_ID:
+        print("🔴 ERROR: Faltan credenciales de Hoodpay (TOKEN/MERCHANT_ID).")
+        return bot.send_message(user_id, "❌ System Error: Payments not configured.")
 
+    # 3. Request
+    url = "https://api.hoodpay.io/v1/payment/create"
     headers = {
-        "Authorization": f"Bearer {HOODPAY_API_KEY}",
+        "Authorization": f"Bearer {HOODPAY_API_TOKEN}",
         "Content-Type": "application/json"
     }
     
     payload = {
-        "businessId": HOODPAY_BUSINESS_ID,
+        "business_id": HOODPAY_MERCHANT_ID, # Mapeamos tu Merchant ID al campo business_id
         "amount": price,
         "currency": "USD",
-        "description": f"Top Up: ${reward} Credits",
-        "metadata": {
-            "type": "balance_topup",
-            "user_id": user_id,
-            "plan_id": plan_id,
-            "reward_amount": reward
-        }
+        "description": f"Balance Top-up: ${reward}",
+        "redirect_url": "https://t.me/MussoliniOtpBot" # Opcional: pon tu bot user
     }
-    
+
     try:
-        response = requests.post(API_URL, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers)
         data = response.json()
         
-        if response.status_code in [200, 201] and 'data' in data:
-            pay_url = data['data']['checkoutUrl']
+        # Logs para debug en consola de Render
+        print(f"💰 Hoodpay Response: {data}")
+
+        if response.status_code in [200, 201] and data.get('success'):
+            pay_url = data['data']['checkout_url']
             pay_id = data['data']['id']
             
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton(f"💸 Pay ${price}", url=pay_url))
-            # Verification Callback
-            markup.add(InlineKeyboardButton("✅ I Have Paid", callback_data=f"chk_plan_{pay_id}_{plan_id}"))
+            markup.add(InlineKeyboardButton("💳 Click to Pay", url=pay_url))
+            markup.add(InlineKeyboardButton("✅ Check Payment", callback_data=f"chk_plan_{pay_id}_{plan_id}"))
             
-            bot.send_message(
-                user_id,
-                f"💳 <b>DEPOSIT INVOICE</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"💵 <b>Pay:</b> ${price} USD\n"
-                f"💰 <b>Receive:</b> ${reward} Credits\n"
-                f"⏳ <b>Validity:</b> 30 Minutes\n\n"
-                f"<i>Click below to pay via Crypto.</i>",
-                reply_markup=markup,
-                parse_mode="HTML"
-            )
+            bot.send_message(user_id, 
+                             f"💎 <b>INVOICE GENERATED</b>\n"
+                             f"━━━━━━━━━━━━━━━━━━━━\n"
+                             f"💵 <b>Amount:</b> ${price}\n"
+                             f"💰 <b>Reward:</b> ${reward}\n\n"
+                             f"<i>Click below to pay via Crypto/Card.</i>", 
+                             reply_markup=markup, parse_mode="HTML")
         else:
-            bot.send_message(user_id, "❌ Error generating invoice.")
-            print(f"Hoodpay Error: {data}")
+            err_msg = data.get('message', 'Unknown Error')
+            bot.send_message(user_id, f"❌ Gateway Error: {err_msg}")
             
     except Exception as e:
-        print(f"Payment Ex: {e}")
-        bot.send_message(user_id, "❌ System Error.")
+        print(f"🔴 Request Exception: {e}")
+        bot.send_message(user_id, "❌ Connection Error.")
 
-# ==========================================
-# 2. SCRIPT INVOICE
-# ==========================================
 def create_script_invoice(user_id, script_id, price, script_title):
+    """Crea pago para Script."""
+    
+    if not HOODPAY_API_TOKEN or not HOODPAY_MERCHANT_ID:
+        return bot.send_message(user_id, "❌ Payments not configured.")
+
+    url = "https://api.hoodpay.io/v1/payment/create"
     headers = {
-        "Authorization": f"Bearer {HOODPAY_API_KEY}",
+        "Authorization": f"Bearer {HOODPAY_API_TOKEN}",
         "Content-Type": "application/json"
     }
+    
     payload = {
-        "businessId": HOODPAY_BUSINESS_ID,
+        "business_id": HOODPAY_MERCHANT_ID,
         "amount": float(price),
         "currency": "USD",
         "description": f"Script: {script_title}",
-        "metadata": {
-            "type": "script_purchase",
-            "user_id": user_id,
-            "script_id": script_id
-        }
     }
+
     try:
-        response = requests.post(API_URL, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers)
         data = response.json()
-        if response.status_code in [200, 201] and 'data' in data:
-            pay_url = data['data']['checkoutUrl']
+        
+        if response.status_code in [200, 201] and data.get('success'):
+            pay_url = data['data']['checkout_url']
             pay_id = data['data']['id']
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("💸 Pay Now", url=pay_url))
-            markup.add(InlineKeyboardButton("✅ I Have Paid", callback_data=f"chk_scr_{pay_id}_{script_id}"))
             
-            bot.send_message(
-                user_id, 
-                f"💎 <b>PURCHASE:</b> {script_title}\n"
-                f"💵 <b>Price:</b> ${price}\n\n"
-                f"👇 <i>Pay securely below.</i>", 
-                reply_markup=markup, parse_mode="HTML"
-            )
-    except: pass
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("💳 Pay Crypto", url=pay_url))
+            markup.add(InlineKeyboardButton("✅ I Paid", callback_data=f"chk_scr_{pay_id}_{script_id}"))
+            
+            bot.send_message(user_id, f"💎 <b>BUY SCRIPT: {script_title}</b>", reply_markup=markup, parse_mode="HTML")
+        else:
+            bot.send_message(user_id, "❌ Error generating invoice.")
+    except:
+        bot.send_message(user_id, "❌ System Error.")
 
-# ==========================================
-# 3. LEGACY/SUBSCRIPTION INVOICE
-# ==========================================
-# Kept for backward compatibility if needed, though dynamic is preferred
-def create_hoodpay_payment(chat_id, plan_key):
-    # Simple placeholder or redirect to dynamic logic if needed
-    pass
-
-# ==========================================
-# 4. CHECK STATUS
-# ==========================================
 def check_payment_status(payment_id):
-    headers = {"Authorization": f"Bearer {HOODPAY_API_KEY}"}
+    """Verifica estado del pago."""
+    if not HOODPAY_API_TOKEN: return False
+    
+    url = f"https://api.hoodpay.io/v1/payment/{payment_id}"
+    headers = {"Authorization": f"Bearer {HOODPAY_API_TOKEN}"}
+    
     try:
-        r = requests.get(f"{API_URL}/{payment_id}", headers=headers)
-        data = r.json()
-        if 'data' in data and 'status' in data['data']:
-            if data['data']['status'].lower() in ['completed', 'paid']: return True
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        
+        if data.get('success') and data['data']['status'] == 'COMPLETED':
+            return True
     except: pass
     return False
