@@ -11,27 +11,67 @@ from database import deduct_balance, save_user_script, get_all_user_scripts
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
-    if call.data.startswith("live_") or call.data.startswith("wiz_"): return
+    
+    # Ignorar callbacks manejados en otros archivos (live panel, wizard steps)
+    if call.data.startswith("live_") or call.data.startswith("wiz_") and not call.data in ["wiz_call", "wiz_sms", "wiz_addbal"]: 
+        return
 
     # ==========================================
-    # 🔙 MAIN MENU
+    # 🔙 MAIN MENU (BACK HOME) - DISEÑO CORREGIDO
     # ==========================================
     if call.data == "back_home":
         text = f"🛡️ <b>MUSSOLINI OTP BOT v31</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>."
-        markup = InlineKeyboardMarkup(row_width=2)
-        markup.add(InlineKeyboardButton("⚡ Dashboard", callback_data="open_dashboard"),
-                   InlineKeyboardButton("🛒 Market", callback_data="market_home"))
-        markup.add(InlineKeyboardButton("👤 Profile", callback_data="show_profile"),
-                   InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"))
-        markup.add(InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"),
-                   InlineKeyboardButton("👥 Referral", callback_data="referral"))
+        
+        markup = InlineKeyboardMarkup()
+        
+        # 1. DASHBOARD (ANCHO COMPLETO)
+        markup.add(InlineKeyboardButton("⚡ ＤＡＳＨＢＯＡＲＤ", callback_data="open_dashboard"))
+        
+        # 2. GRID (2 COLUMNAS)
+        markup.row(InlineKeyboardButton("🛒 Market", callback_data="market_home"),
+                   InlineKeyboardButton("👤 Profile", callback_data="show_profile"))
+                   
+        markup.row(InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"),
+                   InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"))
+                   
+        markup.row(InlineKeyboardButton("👥 Referral", callback_data="referral"),
+                   InlineKeyboardButton("⛑️ Support", callback_data="support"))
+        
+        # 3. ADMIN PANEL (ANCHO COMPLETO - SOLO ADMINS)
         if user_id in ADMIN_IDS:
-            markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
+            markup.add(InlineKeyboardButton("🕴️ ＡＤＭＩＮ  ＰＡＮＥＬ", callback_data="admin_panel"))
+            
         try: bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
         except: bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 🪙 DEPOSIT MENU (DYNAMIC PLANS FROM DB)
+    # ⚡ DASHBOARD (WIZARD LAUNCHER)
+    # ==========================================
+    elif call.data == "open_dashboard":
+        text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect tool to launch:"
+        markup = InlineKeyboardMarkup()
+        markup.row(InlineKeyboardButton("📞 Call", callback_data="wiz_call"),
+                   InlineKeyboardButton("📩 SMS", callback_data="wiz_sms"))
+        markup.row(InlineKeyboardButton("📂 Scripts", callback_data="show_myscripts"),
+                   InlineKeyboardButton("💎 Shop", callback_data="show_shop"))
+        
+        if user_id in ADMIN_IDS:
+            markup.row(InlineKeyboardButton("🔒 Add Bal", callback_data="wiz_addbal"),
+                       InlineKeyboardButton("🔒 List Plans", callback_data="adm_list_pl"))
+        
+        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+    
+    elif call.data == "adm_list_pl":
+        if user_id in ADMIN_IDS:
+            plans = get_all_plans()
+            msg = "📋 <b>PLANS:</b>\n" + ("\n".join([f"• ${p[1]} -> ${p[2]}" for p in plans]) if plans else "None")
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="open_dashboard"))
+            bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
+    # ==========================================
+    # 🪙 DEPOSIT MENU (DYNAMIC PLANS)
     # ==========================================
     elif call.data == "buy_subs":
         plans = get_all_plans()
@@ -44,7 +84,6 @@ def callback_query(call):
         markup = InlineKeyboardMarkup()
         for p in plans:
             # p = (id, price, reward)
-            # Example Button: "$12 (Get $5)"
             btn_text = f"💵 ${p[1]} (Get ${p[2]})"
             markup.add(InlineKeyboardButton(btn_text, callback_data=f"plan_buy_{p[0]}"))
             
@@ -64,41 +103,13 @@ def callback_query(call):
         pay_id, plan_id = parts[2], int(parts[3])
         
         if check_payment_status(pay_id):
-            # Fetch reward amount from DB
             plan = get_plan_by_id(plan_id)
             if plan:
-                reward = float(plan[1]) # plan[0]=price, plan[1]=reward
+                reward = float(plan[1])
                 add_balance(user_id, reward)
                 bot.edit_message_text(f"✅ <b>SUCCESS!</b>\nAdded ${reward} to your wallet.", call.message.chat.id, call.message.message_id, parse_mode="HTML")
         else:
             bot.answer_callback_query(call.id, "⏳ Waiting for payment...", show_alert=True)
-
-    # ==========================================
-    # ⚡ DASHBOARD
-    # ==========================================
-    elif call.data == "open_dashboard":
-        text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect tool:"
-        markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("📞 Call", callback_data="wiz_call"),
-                   InlineKeyboardButton("📩 SMS", callback_data="wiz_sms"))
-        markup.row(InlineKeyboardButton("📂 Scripts", callback_data="show_myscripts"),
-                   InlineKeyboardButton("💎 Shop", callback_data="show_shop"))
-        
-        if user_id in ADMIN_IDS:
-            markup.row(InlineKeyboardButton("🔒 Add Bal", callback_data="wiz_addbal"),
-                       InlineKeyboardButton("🔒 List Plans", callback_data="adm_list_pl")) # Shortcut
-        
-        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
-    
-    # Shortcut for Admin List Plans
-    elif call.data == "adm_list_pl":
-        if user_id in ADMIN_IDS:
-            plans = get_all_plans()
-            msg = "📋 <b>PLANS:</b>\n" + ("\n".join([f"• ${p[1]} -> ${p[2]}" for p in plans]) if plans else "None")
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("⬅ Back", callback_data="open_dashboard"))
-            bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
     # 🛒 MARKET UI
@@ -194,6 +205,11 @@ def callback_query(call):
 
     elif call.data == "referral":
         show_referral(call.message)
+    
+    elif call.data == "support":
+        text = "⛑️ **SUPPORT**\n━━━━━━━━━━━━━━━━\nContact Admin: @YourUsername"
+        bot.answer_callback_query(call.id, "Support contact sent.")
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
     elif call.data == "admin_panel":
         if user_id in ADMIN_IDS:
