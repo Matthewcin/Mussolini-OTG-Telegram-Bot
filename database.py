@@ -15,7 +15,7 @@ def init_db():
         try:
             cur = conn.cursor()
             
-            # 1. Users Table
+            # 1. Users
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
@@ -30,7 +30,7 @@ def init_db():
                 );
             """)
             
-            # 2. Licenses Table
+            # 2. Licenses
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_licenses (
                     key_code TEXT PRIMARY KEY,
@@ -42,7 +42,7 @@ def init_db():
                 );
             """)
 
-            # 3. User Scripts Table
+            # 3. User Scripts
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_scripts (
                     user_id BIGINT,
@@ -54,7 +54,7 @@ def init_db():
                 );
             """)
 
-            # 4. Market Table (Updated with Payout Preferences)
+            # 4. Market
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_market (
                     id SERIAL PRIMARY KEY,
@@ -71,7 +71,7 @@ def init_db():
                 );
             """)
 
-            # 5. Purchases Table
+            # 5. Purchases
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_purchases (
                     user_id BIGINT,
@@ -81,7 +81,7 @@ def init_db():
                 );
             """)
             
-            # Migrations (Safety check for existing DBs)
+            # Migrations
             try:
                 cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
                 cur.execute("ALTER TABLE otp_market ADD COLUMN IF NOT EXISTS payout_pref TEXT DEFAULT 'credits';")
@@ -94,7 +94,7 @@ def init_db():
             conn.close()
             print("🟢 Database Connected & Tables Ready.")
         except Exception as e:
-            print(f"🔴 Error Initializing DB: {e}")
+            print(f"🔴 Init DB Error: {e}")
 
 # ==========================================
 # 💰 WALLET FUNCTIONS
@@ -144,8 +144,7 @@ def deduct_balance(user_id, cost):
             else:
                 conn.close()
                 return False
-        except Exception as e:
-            print(f"Deduct Error: {e}")
+        except: pass
     return False
 
 # ==========================================
@@ -160,7 +159,6 @@ def register_user(user, referrer_id=None):
             cur = conn.cursor()
             cur.execute("SELECT user_id FROM otp_users WHERE user_id = %s", (user.id,))
             exists = cur.fetchone()
-            
             if not exists:
                 is_new_user = True
                 cur.execute("""
@@ -168,17 +166,25 @@ def register_user(user, referrer_id=None):
                     VALUES (%s, %s, %s, %s, %s, 0.00) 
                 """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
             else:
-                cur.execute("""
-                    UPDATE otp_users 
-                    SET username=%s, first_name=%s, last_name=%s 
-                    WHERE user_id=%s
-                """, (user.username, user.first_name, user.last_name, user.id))
-            
+                cur.execute("UPDATE otp_users SET username=%s, first_name=%s, last_name=%s WHERE user_id=%s", 
+                            (user.username, user.first_name, user.last_name, user.id))
             conn.commit()
             conn.close()
-        except Exception as e:
-            print(f"DB Register Error: {e}")
+        except: pass
     return is_new_user
+
+def check_subscription(user_id):
+    if user_id in ADMIN_IDS: return True
+    conn = get_connection()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
+        result = cur.fetchone()
+        conn.close()
+        if result and result[0]: return result[0] > datetime.now()
+        return False
+    except: return False
 
 def add_subscription_days(user_id, days):
     conn = get_connection()
@@ -189,46 +195,14 @@ def add_subscription_days(user_id, days):
             result = cur.fetchone()
             current_end = result[0] if result else None
             now = datetime.now()
-            
-            if current_end and current_end > now:
-                new_end = current_end + timedelta(days=days)
-            else:
-                new_end = now + timedelta(days=days)
-            
+            if current_end and current_end > now: new_end = current_end + timedelta(days=days)
+            else: new_end = now + timedelta(days=days)
             cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
             conn.commit()
-            cur.close()
             conn.close()
             return True, new_end
         except: return False, None
     return False, None
-
-def check_subscription(user_id):
-    if user_id in ADMIN_IDS: return True
-    conn = get_connection()
-    if not conn: return False
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-        if result and result[0]:
-            return result[0] > datetime.now()
-        return False
-    except: return False
-
-def get_referral_count(user_id):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM otp_users WHERE referred_by = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result[0] if result else 0
-        except: pass
-    return 0
 
 def get_user_info(user_id):
     conn = get_connection()
@@ -242,8 +216,68 @@ def get_user_info(user_id):
         except: pass
     return None
 
+def get_referral_count(user_id):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM otp_users WHERE referred_by = %s", (user_id,))
+            result = cur.fetchone()
+            conn.close()
+            return result[0] if result else 0
+        except: pass
+    return 0
+
 # ==========================================
-# SCRIPT FUNCTIONS
+# 🆕 HELPER FUNCTIONS FOR WIZARD & SCRIPTS
+# ==========================================
+
+def get_available_services(user_id):
+    """Returns combined list of services: User's Scripts + Free Market + Defaults."""
+    conn = get_connection()
+    services = []
+    if conn:
+        try:
+            cur = conn.cursor()
+            # 1. User's Scripts
+            cur.execute("SELECT service_name FROM otp_scripts WHERE user_id = %s", (user_id,))
+            my_scripts = [row[0] for row in cur.fetchall()]
+            
+            # 2. Free Market Scripts
+            cur.execute("SELECT service_name FROM otp_market WHERE price = 0 OR is_premium = FALSE")
+            free_scripts = [row[0] for row in cur.fetchall()]
+            
+            # 3. Default Services
+            defaults = ["Amazon", "PayPal", "WhatsApp", "Google", "Facebook", "Apple", "BankOfAmerica", "Chase", "Instagram", "Uber"]
+            
+            # Combine, Unique, Sort
+            all_services = set([s.capitalize() for s in my_scripts + free_scripts + defaults])
+            services = sorted(list(all_services))
+            
+            conn.close()
+        except: pass
+    return services
+
+def get_market_script_by_name(service_name):
+    """Finds a script in the market by service name (Case Insensitive)."""
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id, title, price, is_premium, script_text, service_name, language 
+                FROM otp_market 
+                WHERE service_name ILIKE %s 
+                ORDER BY price ASC LIMIT 1
+            """, (service_name,))
+            result = cur.fetchone()
+            conn.close()
+            return result
+        except: pass
+    return None
+
+# ==========================================
+# STANDARD SCRIPT FUNCTIONS
 # ==========================================
 
 def save_user_script(user_id, service, lang, text):
