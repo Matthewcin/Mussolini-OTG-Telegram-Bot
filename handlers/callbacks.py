@@ -12,12 +12,13 @@ from database import deduct_balance, save_user_script, get_all_user_scripts
 def callback_query(call):
     user_id = call.from_user.id
     
-    # Ignorar callbacks manejados en otros archivos (live panel, wizard steps)
-    if call.data.startswith("live_") or call.data.startswith("wiz_") and not call.data in ["wiz_call", "wiz_sms", "wiz_addbal"]: 
+    # Ignorar callbacks manejados en otros archivos
+    if call.data.startswith("live_") or call.data.startswith("wiz_") and not call.data in ["wiz_call", "wiz_sms", "wiz_addbal", "wiz_genkey", "wiz_addplan", "wiz_delplan"]: 
         return
+    if call.data.startswith("gkey_"): return
 
     # ==========================================
-    # 🔙 MAIN MENU (BACK HOME) - DISEÑO CORREGIDO
+    # 🔙 MAIN MENU (BACK HOME)
     # ==========================================
     if call.data == "back_home":
         text = f"🛡️ <b>MUSSOLINI OTP BOT v31</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>."
@@ -27,17 +28,15 @@ def callback_query(call):
         # 1. DASHBOARD (ANCHO COMPLETO)
         markup.add(InlineKeyboardButton("⚡ ＤＡＳＨＢＯＡＲＤ", callback_data="open_dashboard"))
         
-        # 2. GRID (2 COLUMNAS)
+        # 2. GRID
         markup.row(InlineKeyboardButton("🛒 Market", callback_data="market_home"),
                    InlineKeyboardButton("👤 Profile", callback_data="show_profile"))
-                   
         markup.row(InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"),
                    InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"))
-                   
         markup.row(InlineKeyboardButton("👥 Referral", callback_data="referral"),
                    InlineKeyboardButton("⛑️ Support", callback_data="support"))
         
-        # 3. ADMIN PANEL (ANCHO COMPLETO - SOLO ADMINS)
+        # 3. ADMIN PANEL
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ ＡＤＭＩＮ  ＰＡＮＥＬ", callback_data="admin_panel"))
             
@@ -45,7 +44,7 @@ def callback_query(call):
         except: bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # ⚡ DASHBOARD (WIZARD LAUNCHER)
+    # ⚡ DASHBOARD
     # ==========================================
     elif call.data == "open_dashboard":
         text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect tool to launch:"
@@ -55,43 +54,64 @@ def callback_query(call):
         markup.row(InlineKeyboardButton("📂 Scripts", callback_data="show_myscripts"),
                    InlineKeyboardButton("💎 Shop", callback_data="show_shop"))
         
-        if user_id in ADMIN_IDS:
-            markup.row(InlineKeyboardButton("🔒 Add Bal", callback_data="wiz_addbal"),
-                       InlineKeyboardButton("🔒 List Plans", callback_data="adm_list_pl"))
-        
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
-    
+
+    # ==========================================
+    # 🕴️ ADMIN PANEL (INTERACTIVE WIZARD)
+    # ==========================================
+    elif call.data == "admin_panel":
+        if user_id in ADMIN_IDS:
+            text = "🕴️ <b>ＡＤＭＩＮ  ＰＡＮＥＬ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect management tool:"
+            markup = InlineKeyboardMarkup()
+            
+            # Fila 1: Dinero y Llaves
+            markup.row(
+                InlineKeyboardButton("💰 Add Balance", callback_data="wiz_addbal"),
+                InlineKeyboardButton("🎟️ Gen Key", callback_data="wiz_genkey")
+            )
+            
+            # Fila 2: Gestión de Planes
+            markup.row(
+                InlineKeyboardButton("➕ Add Plan", callback_data="wiz_addplan"),
+                InlineKeyboardButton("➖ Del Plan", callback_data="wiz_delplan")
+            )
+            
+            # Fila 3: Listas y Logs
+            markup.row(
+                InlineKeyboardButton("📋 List Plans", callback_data="adm_list_pl"),
+                InlineKeyboardButton("📜 System Logs", callback_data="show_log")
+            )
+            
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
     elif call.data == "adm_list_pl":
         if user_id in ADMIN_IDS:
             plans = get_all_plans()
             msg = "📋 <b>PLANS:</b>\n" + ("\n".join([f"• ${p[1]} -> ${p[2]}" for p in plans]) if plans else "None")
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("⬅ Back", callback_data="open_dashboard"))
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
             bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 🪙 DEPOSIT MENU (DYNAMIC PLANS)
+    # 🪙 DEPOSIT MENU
     # ==========================================
     elif call.data == "buy_subs":
         plans = get_all_plans()
-        
         if not plans:
             text = "🪙 <b>DEPOSIT</b>\n━━━━━━━━━━━━━━━━━━━━\nNo plans configured yet.\nContact Admin."
         else:
             text = "🪙 <b>SELECT TOP-UP PLAN</b>\n━━━━━━━━━━━━━━━━━━━━\nChoose amount to deposit:"
-        
         markup = InlineKeyboardMarkup()
         for p in plans:
-            # p = (id, price, reward)
             btn_text = f"💵 ${p[1]} (Get ${p[2]})"
             markup.add(InlineKeyboardButton(btn_text, callback_data=f"plan_buy_{p[0]}"))
-            
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 💸 PROCESS PLAN PURCHASE
+    # 💸 PROCESS PURCHASE (Plans)
     # ==========================================
     elif call.data.startswith("plan_buy_"):
         plan_id = int(call.data.split("_")[2])
@@ -101,7 +121,6 @@ def callback_query(call):
     elif call.data.startswith("chk_plan_"):
         parts = call.data.split("_")
         pay_id, plan_id = parts[2], int(parts[3])
-        
         if check_payment_status(pay_id):
             plan = get_plan_by_id(plan_id)
             if plan:
@@ -155,21 +174,7 @@ def callback_query(call):
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # WIZARD TRIGGERS
-    # ==========================================
-    elif call.data == "wiz_call":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        start_call_wizard(call.message)
-    elif call.data == "wiz_sms":
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        start_sms_wizard(call.message)
-    elif call.data == "wiz_addbal":
-        if user_id in ADMIN_IDS:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-            start_balance_wizard(call.message)
-
-    # ==========================================
-    # BUYING LOGIC (Credits vs Crypto)
+    # BUYING LOGIC (Scripts)
     # ==========================================
     elif call.data.startswith("buy_cred_"):
         sid = int(call.data.split("_")[2])
@@ -207,15 +212,9 @@ def callback_query(call):
         show_referral(call.message)
     
     elif call.data == "support":
-        text = "⛑️ **SUPPORT**\n━━━━━━━━━━━━━━━━\nContact Admin: @YourUsername"
+        text = "⛑️ **SUPPORT**\n━━━━━━━━━━━━━━━━\nContact Admin: @Mussolini860\n━━━━━━━━━━━━━━━━\nContact Developer for Issues\n🦠 @whois_tyler (VirusNTO)"
         bot.answer_callback_query(call.id, "Support contact sent.")
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
-    elif call.data == "admin_panel":
-        if user_id in ADMIN_IDS:
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("📜 Logs", callback_data="show_log"), InlineKeyboardButton("⬅ Back", callback_data="back_home"))
-            bot.edit_message_text("🕴️ <b>ADMIN</b>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     elif call.data == "show_log":
         if user_id in ADMIN_IDS:
@@ -245,7 +244,6 @@ def process_purchase(message, buyer_id, script_id, method):
         cur.execute("INSERT INTO otp_purchases (user_id, script_id) VALUES (%s, %s)", (buyer_id, script_id))
         save_user_script(buyer_id, service, lang, text)
         
-        # Commission (60%)
         comm = price * 0.60
         if pref == "credits": add_balance(author, comm)
         
