@@ -1,4 +1,5 @@
 import psycopg2
+import uuid
 from config import DATABASE_URL, ADMIN_IDS
 from datetime import datetime, timedelta
 
@@ -81,7 +82,7 @@ def init_db():
                 );
             """)
 
-            # 6. Payment Plans (NEW)
+            # 6. Payment Plans
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_plans (
                     id SERIAL PRIMARY KEY,
@@ -90,14 +91,6 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
-            
-            # Migrations
-            try:
-                cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
-                cur.execute("ALTER TABLE otp_market ADD COLUMN IF NOT EXISTS payout_pref TEXT DEFAULT 'credits';")
-                cur.execute("ALTER TABLE otp_market ADD COLUMN IF NOT EXISTS payout_wallet TEXT DEFAULT NULL;")
-                conn.commit()
-            except: conn.rollback()
             
             conn.commit()
             cur.close()
@@ -320,7 +313,7 @@ def delete_user_script(user_id, service):
     return False
 
 # ==========================================
-# 🆕 PLAN MANAGEMENT FUNCTIONS
+# PLAN & LICENSE MANAGEMENT (ADMIN)
 # ==========================================
 
 def manage_plan(action, price, reward=0):
@@ -329,7 +322,6 @@ def manage_plan(action, price, reward=0):
     try:
         cur = conn.cursor()
         if action == "add":
-            # Upsert: Update if price exists, else insert
             cur.execute("""
                 INSERT INTO otp_plans (price, reward_balance) VALUES (%s, %s)
                 ON CONFLICT (price) DO UPDATE SET reward_balance = EXCLUDED.reward_balance
@@ -350,12 +342,11 @@ def get_all_plans():
     if conn:
         try:
             cur = conn.cursor()
-            # Sort by price ascending
             cur.execute("SELECT id, price, reward_balance FROM otp_plans ORDER BY price ASC")
             plans = cur.fetchall()
             conn.close()
         except: pass
-    return plans # returns list of tuples: (id, price, reward)
+    return plans
 
 def get_plan_by_id(plan_id):
     conn = get_connection()
@@ -367,4 +358,20 @@ def get_plan_by_id(plan_id):
             conn.close()
             return result
         except: pass
+    return None
+
+def create_license(days):
+    """Generates a unique license key and saves it to DB."""
+    key_code = "KEY-" + str(uuid.uuid4())[:8].upper()
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            # Status active. credits_amount depends on PLAN_CREDITS in config when redeemed
+            cur.execute("INSERT INTO otp_licenses (key_code, duration_days, status) VALUES (%s, %s, 'active')", (key_code, days))
+            conn.commit()
+            conn.close()
+            return key_code
+        except Exception as e:
+            print(f"Key Gen Error: {e}")
     return None
