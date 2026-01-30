@@ -1,8 +1,7 @@
 from telebot.types import Message
 from twilio.rest import Client
-from datetime import datetime
 from config import bot, TWILIO_SID, TWILIO_TOKEN, TWILIO_NUMBER, TWILIO_APP_URL, PRICING, ADMIN_IDS
-from database import get_connection, check_subscription, deduct_balance, get_user_balance
+from database import check_subscription, deduct_balance, get_user_balance
 
 # Initialize Twilio Client
 twilio_client = None
@@ -59,7 +58,8 @@ def handle_call(message: Message):
             record=True,
             recording_channels='dual',
             status_callback=status_callback_url, 
-            status_callback_event=['initiated', 'ringing', 'answered', 'completed']
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
+            time_limit=120  # <--- 🛡️ SEGURIDAD: CORTA A LOS 120 SEGUNDOS (2 MIN)
         )
         
         bot.edit_message_text(
@@ -67,6 +67,7 @@ def handle_call(message: Message):
             f"🎯 Target: `{target}`\n"
             f"🏢 Service: `{service}`\n"
             f"💰 Cost: `${cost}`\n"
+            f"⏱ Limit: `2 Minutes`\n"
             f"🔴 **Recording:** ON\n\n"
             f"_⚠️ Waiting for answer..._", 
             chat_id=chat_id,
@@ -75,8 +76,8 @@ def handle_call(message: Message):
         )
         
     except Exception as e:
-        # Si falla, deberíamos devolver el dinero (opcional, pero justo)
-        # add_balance(user_id, cost) 
+        # Opcional: Reembolsar si falla
+        # add_balance(user_id, cost)
         error_msg = str(e)
         if "unverified" in error_msg.lower():
             bot.reply_to(message, "❌ **Twilio Trial Error:** You can only call verified numbers.")
