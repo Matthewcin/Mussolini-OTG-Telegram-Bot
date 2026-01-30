@@ -1,60 +1,114 @@
 import requests
-import json
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import bot, HOODPAY_API_TOKEN, HOODPAY_MERCHANT_ID, WEBHOOK_BASE_URL
+from config import bot, HOODPAY_API_KEY, HOODPAY_BUSINESS_ID
+from database import get_plan_by_id
 
-PLANS = {
-    "daily": {"title": "Daily License", "price": 50.00},
-    "weekly": {"title": "Weekly License", "price": 150.00},
-    "monthly": {"title": "Monthly License", "price": 285.00},
-    "dev_test": {"title": "Dev Test", "price": 1.00}
-}
+API_URL = "https://api.hoodpay.io/v1/payment"
 
-def create_hoodpay_payment(chat_id, plan_type):
-    if not HOODPAY_API_TOKEN: 
-        return bot.send_message(chat_id, "❌ Error: Payments not configured.")
-    
-    plan = PLANS.get(plan_type)
-    if not plan: return
-    
-    url = f"https://api.hoodpay.io/v1/businesses/{HOODPAY_MERCHANT_ID}/payments"
-    headers = {"Authorization": f"Bearer {HOODPAY_API_TOKEN}", "Content-Type": "application/json"}
+# ==========================================
+# 1. DYNAMIC PLAN INVOICE (DB BASED)
+# ==========================================
+def create_dynamic_plan_invoice(user_id, plan_id):
+    # Buscamos el plan en la DB
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        bot.send_message(user_id, "❌ Plan no longer exists.")
+        return
+
+    price, reward = plan
+    price = float(price)
+    reward = float(reward)
+
+    headers = {
+        "Authorization": f"Bearer {HOODPAY_API_KEY}",
+        "Content-Type": "application/json"
+    }
     
     payload = {
-        "amount": plan["price"],
+        "businessId": HOODPAY_BUSINESS_ID,
+        "amount": price,
         "currency": "USD",
-        "description": f"OTP Bot - {plan['title']}",
-        "redirect_url": "https://t.me/MussoliniIOTPBot", 
-        "webhook_url": f"{WEBHOOK_BASE_URL}/webhook/hoodpay", 
+        "description": f"Top Up: ${reward} Credits",
         "metadata": {
-            "user_id": str(chat_id),      
-            "plan_type": str(plan_type)
+            "type": "balance_topup",
+            "user_id": user_id,
+            "plan_id": plan_id,
+            "reward_amount": reward
         }
     }
     
-    msg = bot.send_message(chat_id, "⚙️ **Generating Payment Link...**", parse_mode="Markdown")
-    
     try:
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(API_URL, json=payload, headers=headers)
         data = response.json()
         
-        if "data" in data and "url" in data["data"]:
-            checkout_url = data["data"]["url"]
+        if response.status_code in [200, 201] and 'data' in data:
+            pay_url = data['data']['checkoutUrl']
+            pay_id = data['data']['id']
             
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton(f"💸 Pay ${plan['price']}", url=checkout_url))
-            # 🔙 BOTÓN BACK (Importante por si se arrepienten)
-            markup.add(InlineKeyboardButton("❌ Cancel / Back", callback_data="back_home"))
+            markup.add(InlineKeyboardButton(f"💸 Pay ${price}", url=pay_url))
+            # Callback para verificar (usaremos 'chk_plan_')
+            markup.add(InlineKeyboardButton("✅ I Have Paid", callback_data=f"chk_plan_{pay_id}_{plan_id}"))
             
-            bot.edit_message_text(
-                f"✅ **Invoice Created**\n\nPlan: {plan['title']}\nAmount: **${plan['price']}**\n\nClick below to pay with Crypto/Card. Activation is instant.",
-                chat_id=chat_id,
-                message_id=msg.message_id,
+            bot.send_message(
+                user_id,
+                f"💳 <b>DEPOSIT INVOICE</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"💵 <b>Pay:</b> ${price} USD\n"
+                f"💰 <b>Receive:</b> ${reward} Credits\n"
+                f"⏳ <b>Validity:</b> 30 Minutes\n\n"
+                f"<i>Click below to pay via Crypto.</i>",
                 reply_markup=markup,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         else:
-            bot.edit_message_text(f"❌ Error creating invoice. Try again later.", chat_id=chat_id, message_id=msg.message_id)
+            bot.send_message(user_id, "❌ Error generating invoice.")
+            print(f"Hoodpay Error: {data}")
             
     except Exception as e:
-        bot.edit_message_text(f"❌ Connection Error: {e}", chat_id=chat_id, message_id=msg.message_id)
+        print(f"Payment Ex: {e}")
+        bot.send_message(user_id, "❌ System Error.")
+
+# ==========================================
+# 2. SCRIPT INVOICE
+# ==========================================
+def create_script_invoice(user_id, script_id, price, script_title):
+    headers = {
+        "Authorization": f"Bearer {HOODPAY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "businessId": HOODPAY_BUSINESS_ID,
+        "amount": float(price),
+        "currency": "USD",
+        "description": f"Script: {script_title}",
+        "metadata": {
+            "type": "script_purchase",
+            "user_id": user_id,
+            "script_id": script_id
+        }
+    }
+    try:
+        response = requests.post(API_URL, json=payload, headers=headers)
+        data = response.json()
+        if response.status_code in [200, 201] and 'data' in data:
+            pay_url = data['data']['checkoutUrl']
+            pay_id = data['data']['id']
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("💸 Pay Now", url=pay_url))
+            markup.add(InlineKeyboardButton("✅ I Have Paid", callback_data=f"chk_scr_{pay_id}_{script_id}"))
+            bot.send_message(user_id, f"💎 <b>PURCHASE:</b> {script_title}\n💵 <b>Price:</b> ${price}", reply_markup=markup, parse_mode="HTML")
+    except: pass
+
+# ==========================================
+# 3. CHECK STATUS
+# ==========================================
+def check_payment_status(payment_id):
+    headers = {"Authorization": f"Bearer {HOODPAY_API_KEY}"}
+    try:
+        r = requests.get(f"{API_URL}/{payment_id}", headers=headers)
+        data = r.json()
+        if 'data' in data and 'status' in data['data']:
+            if data['data']['status'].lower() in ['completed', 'paid']: return True
+    except: pass
+    return False
