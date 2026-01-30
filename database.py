@@ -30,7 +30,7 @@ def init_db():
                 );
             """)
             
-            # MIGRACIÓN AUTOMÁTICA: Agregar wallet_balance si no existe
+            # MIGRACIÓN AUTOMÁTICA
             try:
                 cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
                 conn.commit()
@@ -44,9 +44,15 @@ def init_db():
                     duration_days INT NOT NULL,
                     status TEXT DEFAULT 'active',
                     used_by BIGINT,
+                    credits_amount DECIMAL(10, 2) DEFAULT 0.00,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            # Migración licencias por si acaso
+            try:
+                cur.execute("ALTER TABLE otp_licenses ADD COLUMN IF NOT EXISTS credits_amount DECIMAL(10, 2) DEFAULT 0.00;")
+                conn.commit()
+            except: conn.rollback()
 
             # Tabla Scripts
             cur.execute("""
@@ -134,19 +140,43 @@ def deduct_balance(user_id, cost):
 # ==========================================
 
 def register_user(user, referrer_id=None):
+    """
+    Registra al usuario.
+    Devuelve True si es un usuario NUEVO (para pagar bono).
+    Devuelve False si ya existía.
+    """
     conn = get_connection()
+    is_new_user = False
+    
     if conn:
         try:
             cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) 
-                VALUES (%s, %s, %s, %s, %s, 0.00) 
-                ON CONFLICT (user_id) 
-                DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name, last_name=EXCLUDED.last_name;
-            """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
+            
+            # 1. Verificar si ya existe antes de insertar
+            cur.execute("SELECT user_id FROM otp_users WHERE user_id = %s", (user.id,))
+            exists = cur.fetchone()
+            
+            if not exists:
+                # 2. Es NUEVO, hacemos el Insert
+                is_new_user = True
+                cur.execute("""
+                    INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) 
+                    VALUES (%s, %s, %s, %s, %s, 0.00) 
+                """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
+            else:
+                # 3. Ya existe, solo actualizamos info básica
+                cur.execute("""
+                    UPDATE otp_users 
+                    SET username=%s, first_name=%s, last_name=%s 
+                    WHERE user_id=%s
+                """, (user.username, user.first_name, user.last_name, user.id))
+            
             conn.commit()
             conn.close()
-        except: pass
+        except Exception as e:
+            print(f"DB Register Error: {e}")
+            
+    return is_new_user
 
 def add_subscription_days(user_id, days):
     conn = get_connection()
@@ -191,7 +221,6 @@ def get_user_info(user_id):
     if conn:
         try:
             cur = conn.cursor()
-            # Ahora traemos también wallet_balance (indice 3)
             cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
             result = cur.fetchone()
             conn.close()
