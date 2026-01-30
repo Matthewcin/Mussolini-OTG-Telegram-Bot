@@ -15,7 +15,7 @@ def init_db():
         try:
             cur = conn.cursor()
             
-            # Tabla Usuarios
+            # 1. Tabla Usuarios
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_users (
                     user_id BIGINT PRIMARY KEY,
@@ -30,14 +30,7 @@ def init_db():
                 );
             """)
             
-            # MIGRACIÓN AUTOMÁTICA
-            try:
-                cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
-                conn.commit()
-            except:
-                conn.rollback()
-
-            # Tabla Licencias
+            # 2. Tabla Licencias
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_licenses (
                     key_code TEXT PRIMARY KEY,
@@ -48,13 +41,8 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
-            # Migración licencias por si acaso
-            try:
-                cur.execute("ALTER TABLE otp_licenses ADD COLUMN IF NOT EXISTS credits_amount DECIMAL(10, 2) DEFAULT 0.00;")
-                conn.commit()
-            except: conn.rollback()
 
-            # Tabla Scripts
+            # 3. Tabla Scripts Personales (Lo que usa el usuario)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS otp_scripts (
                     user_id BIGINT,
@@ -65,11 +53,42 @@ def init_db():
                     PRIMARY KEY (user_id, service_name)
                 );
             """)
+
+            # 4. NUEVA: Tabla Mercado (Scripts en Venta/Gratis)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_market (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    service_name TEXT NOT NULL,
+                    script_text TEXT NOT NULL,
+                    language TEXT DEFAULT 'en-US',
+                    price DECIMAL(10, 2) DEFAULT 0.00,
+                    is_premium BOOLEAN DEFAULT FALSE,
+                    author_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # 5. NUEVA: Tabla Compras (Historial)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS otp_purchases (
+                    user_id BIGINT,
+                    script_id INT,
+                    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, script_id)
+                );
+            """)
+            
+            # Migraciones de seguridad por si las tablas ya existían
+            try:
+                cur.execute("ALTER TABLE otp_users ADD COLUMN IF NOT EXISTS wallet_balance DECIMAL(10, 2) DEFAULT 0.00;")
+                conn.commit()
+            except: conn.rollback()
             
             conn.commit()
             cur.close()
             conn.close()
-            print("🟢 Database connected and Wallet System Ready.")
+            print("🟢 Database Connected & Tables Ready (Marketplace included).")
         except Exception as e:
             print(f"🔴 Error Initializing DB: {e}")
 
@@ -78,9 +97,7 @@ def init_db():
 # ==========================================
 
 def get_user_balance(user_id):
-    """Devuelve el saldo actual. Admins tienen saldo infinito visual."""
     if user_id in ADMIN_IDS: return 9999.00
-    
     conn = get_connection()
     if conn:
         try:
@@ -93,7 +110,6 @@ def get_user_balance(user_id):
     return 0.00
 
 def add_balance(user_id, amount):
-    """Suma créditos al usuario."""
     conn = get_connection()
     if conn:
         try:
@@ -106,18 +122,11 @@ def add_balance(user_id, amount):
     return False
 
 def deduct_balance(user_id, cost):
-    """
-    Intenta cobrar. 
-    Devuelve True si se pudo cobrar (tenía saldo).
-    Devuelve False si no tenía saldo suficiente.
-    """
-    if user_id in ADMIN_IDS: return True # Admin no paga
-
+    if user_id in ADMIN_IDS: return True
     conn = get_connection()
     if conn:
         try:
             cur = conn.cursor()
-            # Verificar saldo actual
             cur.execute("SELECT wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
             res = cur.fetchone()
             current = float(res[0]) if res else 0.00
@@ -140,31 +149,21 @@ def deduct_balance(user_id, cost):
 # ==========================================
 
 def register_user(user, referrer_id=None):
-    """
-    Registra al usuario.
-    Devuelve True si es un usuario NUEVO (para pagar bono).
-    Devuelve False si ya existía.
-    """
     conn = get_connection()
     is_new_user = False
-    
     if conn:
         try:
             cur = conn.cursor()
-            
-            # 1. Verificar si ya existe antes de insertar
             cur.execute("SELECT user_id FROM otp_users WHERE user_id = %s", (user.id,))
             exists = cur.fetchone()
             
             if not exists:
-                # 2. Es NUEVO, hacemos el Insert
                 is_new_user = True
                 cur.execute("""
                     INSERT INTO otp_users (user_id, username, first_name, last_name, referred_by, wallet_balance) 
                     VALUES (%s, %s, %s, %s, %s, 0.00) 
                 """, (user.id, user.username, user.first_name, user.last_name, referrer_id))
             else:
-                # 3. Ya existe, solo actualizamos info básica
                 cur.execute("""
                     UPDATE otp_users 
                     SET username=%s, first_name=%s, last_name=%s 
@@ -175,31 +174,7 @@ def register_user(user, referrer_id=None):
             conn.close()
         except Exception as e:
             print(f"DB Register Error: {e}")
-            
     return is_new_user
-
-def add_subscription_days(user_id, days):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            current_end = result[0] if result else None
-            now = datetime.now()
-            
-            if current_end and current_end > now:
-                new_end = current_end + timedelta(days=days)
-            else:
-                new_end = now + timedelta(days=days)
-            
-            cur.execute("UPDATE otp_users SET subscription_end = %s WHERE user_id = %s", (new_end, user_id))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return True, new_end
-        except: return False, None
-    return False, None
 
 def check_subscription(user_id):
     if user_id in ADMIN_IDS: return True
@@ -216,18 +191,6 @@ def check_subscription(user_id):
         return False
     except: return False
 
-def get_user_info(user_id):
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT subscription_end, joined_at, referred_by, wallet_balance FROM otp_users WHERE user_id = %s", (user_id,))
-            result = cur.fetchone()
-            conn.close()
-            return result 
-        except: pass
-    return None
-
 def get_referral_count(user_id):
     conn = get_connection()
     if conn:
@@ -241,7 +204,9 @@ def get_referral_count(user_id):
     return 0
 
 # --- SCRIPT FUNCTIONS ---
+
 def save_user_script(user_id, service, lang, text):
+    """Guarda o actualiza un script personal."""
     conn = get_connection()
     if conn:
         try:
