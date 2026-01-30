@@ -12,7 +12,7 @@ from database import deduct_balance, save_user_script, get_all_user_scripts
 def callback_query(call):
     user_id = call.from_user.id
     
-    # Ignorar callbacks manejados en otros archivos
+    # Filtro: Ignorar callbacks de otros módulos (Wizards internos)
     if call.data.startswith("live_") or call.data.startswith("wiz_") and not call.data in ["wiz_call", "wiz_sms", "wiz_addbal", "wiz_genkey", "wiz_addplan", "wiz_delplan"]: 
         return
     if call.data.startswith("gkey_"): return
@@ -24,11 +24,9 @@ def callback_query(call):
         text = f"🛡️ <b>MUSSOLINI OTP BOT v31</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>."
         
         markup = InlineKeyboardMarkup()
-        
-        # 1. DASHBOARD (ANCHO COMPLETO)
+        # 1. Dashboard
         markup.add(InlineKeyboardButton("⚡ ＤＡＳＨＢＯＡＲＤ", callback_data="open_dashboard"))
-        
-        # 2. GRID
+        # 2. Rejilla
         markup.row(InlineKeyboardButton("🛒 Market", callback_data="market_home"),
                    InlineKeyboardButton("👤 Profile", callback_data="show_profile"))
         markup.row(InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"),
@@ -36,7 +34,7 @@ def callback_query(call):
         markup.row(InlineKeyboardButton("👥 Referral", callback_data="referral"),
                    InlineKeyboardButton("⛑️ Support", callback_data="support"))
         
-        # 3. ADMIN PANEL
+        # 3. Admin Panel (Solo si es admin)
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ ＡＤＭＩＮ  ＰＡＮＥＬ", callback_data="admin_panel"))
             
@@ -58,7 +56,7 @@ def callback_query(call):
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 🕴️ ADMIN PANEL (INTERACTIVE WIZARD)
+    # 🕴️ ADMIN PANEL (CORREGIDO Y COMPLETO)
     # ==========================================
     elif call.data == "admin_panel":
         if user_id in ADMIN_IDS:
@@ -85,7 +83,10 @@ def callback_query(call):
             
             markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
             bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+        else:
+            bot.answer_callback_query(call.id, "❌ Access Denied")
 
+    # === SUB-MENÚS DE ADMIN ===
     elif call.data == "adm_list_pl":
         if user_id in ADMIN_IDS:
             plans = get_all_plans()
@@ -94,15 +95,26 @@ def callback_query(call):
             markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
             bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
+    elif call.data == "show_log":
+        if user_id in ADMIN_IDS:
+            try:
+                with open("bot.log", "r") as f: lines = f.readlines()[-15:]
+                log_text = "".join(lines)
+            except: log_text = "No logs."
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
+            bot.edit_message_text(f"📜 <b>LOGS:</b>\n<pre>{log_text}</pre>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
     # ==========================================
     # 🪙 DEPOSIT MENU
     # ==========================================
     elif call.data == "buy_subs":
         plans = get_all_plans()
         if not plans:
-            text = "🪙 <b>DEPOSIT</b>\n━━━━━━━━━━━━━━━━━━━━\nNo plans configured yet.\nContact Admin."
+            text = "🪙 <b>DEPOSIT</b>\n━━━━━━━━━━━━━━━━━━━━\nNo plans configured.\nAdmin needs to add plans."
         else:
             text = "🪙 <b>SELECT TOP-UP PLAN</b>\n━━━━━━━━━━━━━━━━━━━━\nChoose amount to deposit:"
+        
         markup = InlineKeyboardMarkup()
         for p in plans:
             btn_text = f"💵 ${p[1]} (Get ${p[2]})"
@@ -111,7 +123,7 @@ def callback_query(call):
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # 💸 PROCESS PURCHASE (Plans)
+    # 💸 PROCESAR PAGOS (PLANES)
     # ==========================================
     elif call.data.startswith("plan_buy_"):
         plan_id = int(call.data.split("_")[2])
@@ -174,7 +186,7 @@ def callback_query(call):
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
     # ==========================================
-    # BUYING LOGIC (Scripts)
+    # BUYING LOGIC (SCRIPTS)
     # ==========================================
     elif call.data.startswith("buy_cred_"):
         sid = int(call.data.split("_")[2])
@@ -196,7 +208,7 @@ def callback_query(call):
         else: bot.answer_callback_query(call.id, "⏳ Waiting for payment...", show_alert=True)
 
     # ==========================================
-    # STANDARD FEATURES
+    # OTROS (Perfil, Key, Soporte, Referidos)
     # ==========================================
     elif call.data == "show_profile":
         text, markup = get_profile_content(user_id, call.from_user.first_name)
@@ -216,15 +228,23 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "Support contact sent.")
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
-    elif call.data == "show_log":
+    # ==========================================
+    # WIZARD TRIGGERS (Revisar handlers/wizard.py)
+    # ==========================================
+    elif call.data == "wiz_call":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        start_call_wizard(call.message)
+    elif call.data == "wiz_sms":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        start_sms_wizard(call.message)
+    elif call.data == "wiz_addbal":
         if user_id in ADMIN_IDS:
-            try:
-                with open("bot.log", "r") as f: lines = f.readlines()[-15:]
-                log_text = "".join(lines)
-            except: log_text = "No logs."
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
-            bot.edit_message_text(f"📜 <b>LOGS:</b>\n<pre>{log_text}</pre>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            start_balance_wizard(call.message)
+    # Estos triggers para wiz_genkey, wiz_addplan, etc. se manejan en wizard.py 
+    # pero deben ser pasados por aquí si no se capturan allá.
+    # En wizard.py tenemos un handler que captura "wiz_" y "gkey_". 
+    # Así que no necesitamos duplicarlos aquí si wizard.py se carga correctamente.
 
 def process_purchase(message, buyer_id, script_id, method):
     conn = get_connection()
