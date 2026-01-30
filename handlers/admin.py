@@ -1,28 +1,23 @@
 from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from twilio.rest import Client
 from config import bot, ADMIN_IDS, TWILIO_SID, TWILIO_TOKEN
-from database import add_balance, get_user_balance, manage_plan, get_all_plans
+from database import add_balance, get_user_balance, manage_plan, get_all_plans, get_all_users_ids, set_setting, get_setting
+import time
 
 # ==========================================
-# 📡 TWILIO CHECKER (BALANCE & NUMBERS)
+# 📡 TWILIO CHECKER
 # ==========================================
 def check_twilio_status():
-    """Conecta con Twilio y obtiene saldo y números."""
     try:
         client = Client(TWILIO_SID, TWILIO_TOKEN)
-        
-        # 1. Obtener Cuenta (Saldo)
         account = client.api.accounts(TWILIO_SID).fetch()
         balance = f"{account.balance} {account.currency}"
         status = account.status
-        
-        # 2. Obtener Números (Limitado a 5 para no saturar)
-        numbers = client.incoming_phone_numbers.list(limit=10)
+        numbers = client.incoming_phone_numbers.list(limit=5)
         if numbers:
             num_list = "\n".join([f"📞 <code>{n.phone_number}</code> ({n.friendly_name})" for n in numbers])
         else:
             num_list = "⚠️ No active numbers."
-            
         return True, balance, status, num_list
     except Exception as e:
         return False, str(e), None, None
@@ -30,55 +25,80 @@ def check_twilio_status():
 @bot.message_handler(commands=['twilio'])
 def cmd_check_twilio(message: Message):
     if message.from_user.id not in ADMIN_IDS: return
-    
-    msg = bot.reply_to(message, "⏳ <b>Connecting to Twilio...</b>", parse_mode="HTML")
-    
+    msg = bot.reply_to(message, "⏳ <b>Connecting...</b>", parse_mode="HTML")
     success, bal, stat, nums = check_twilio_status()
-    
     if success:
-        text = (
-            f"📡 <b>TWILIO STATUS</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 <b>Balance:</b> <code>{bal}</code>\n"
-            f"📊 <b>Status:</b> {stat.upper()}\n\n"
-            f"🔢 <b>Active Numbers:</b>\n{nums}"
-        )
+        text = f"📡 <b>TWILIO</b>\n💰 <b>Bal:</b> {bal}\n📊 <b>Status:</b> {stat}\n{nums}"
         bot.edit_message_text(text, message.chat.id, msg.message_id, parse_mode="HTML")
     else:
-        bot.edit_message_text(f"❌ <b>Twilio Error:</b>\n{bal}", message.chat.id, msg.message_id, parse_mode="HTML")
+        bot.edit_message_text(f"❌ Error: {bal}", message.chat.id, msg.message_id)
 
 # ==========================================
-# 💰 ADD BALANCE (MANUAL COMMAND)
+# 📢 BROADCAST SYSTEM
+# ==========================================
+def broadcast_to_all(text, type_prefix="📢"):
+    ids = get_all_users_ids()
+    count = 0
+    blocked = 0
+    final_msg = f"{type_prefix}\n━━━━━━━━━━━━━━━━━━━━\n{text}"
+    
+    for uid in ids:
+        try:
+            bot.send_message(uid, final_msg, parse_mode="HTML")
+            count += 1
+            time.sleep(0.05) # Rate limit protection
+        except:
+            blocked += 1
+    return count, blocked
+
+# ==========================================
+# 📝 CHANGELOG & SETTINGS
+# ==========================================
+@bot.message_handler(commands=['changelog'])
+def show_changelog_public(message: Message):
+    text = get_setting("changelog_text")
+    if not text: text = "No changelogs yet."
+    bot.reply_to(message, f"📝 <b>CHANGELOG</b>\n━━━━━━━━━━━━━━━━━━━━\n{text}", parse_mode="HTML")
+
+# Helper for Wizard input
+def process_admin_input(message, action_type):
+    if action_type == "changelog":
+        if set_setting("changelog_text", message.text):
+            bot.reply_to(message, "✅ Changelog updated!")
+            
+    elif action_type == "maint_msg":
+        if set_setting("maintenance_msg", message.text):
+            set_setting("maintenance_mode", "ON")
+            bot.reply_to(message, "✅ <b>Maintenance ON</b>\nMessage saved.", parse_mode="HTML")
+            
+    elif action_type.startswith("cast_"):
+        b_type = action_type.split("_")[1]
+        prefix = "📢 <b>ANNOUNCEMENT</b>"
+        if b_type == "update": prefix = "🔄 <b>NEW UPDATE</b>"
+        elif b_type == "maint": prefix = "⚠️ <b>MAINTENANCE NOTICE</b>"
+        
+        msg = bot.reply_to(message, "⏳ Sending broadcast...")
+        sent, blk = broadcast_to_all(message.text, prefix)
+        bot.edit_message_text(f"✅ <b>Broadcast Sent</b>\nReceived: {sent}\nFailed/Blocked: {blk}", message.chat.id, msg.message_id, parse_mode="HTML")
+
+def toggle_maintenance_mode(chat_id):
+    current = get_setting("maintenance_mode")
+    new_status = "OFF" if current == "ON" else "ON"
+    set_setting("maintenance_mode", new_status)
+    return new_status
+
+# ==========================================
+# 💰 ADD BALANCE
 # ==========================================
 @bot.message_handler(commands=['addbalance'])
 def admin_add_balance(message: Message):
     if message.from_user.id not in ADMIN_IDS: return
-
     try:
         args = message.text.split()
-        if len(args) < 3:
-            return bot.reply_to(message, "⚠️ Usage: `/addbalance [ID] [Amount]`", parse_mode="Markdown")
-        
+        if len(args) < 3: return
         target_id = int(args[1])
         amount = float(args[2])
-
         if add_balance(target_id, amount):
             new_bal = get_user_balance(target_id)
-            bot.reply_to(message, f"✅ <b>Added ${amount}</b> to <code>{target_id}</code>\nNew Balance: ${new_bal}", parse_mode="HTML")
-            try: bot.send_message(target_id, f"💰 <b>Deposit Received!</b>\nAdmin added <b>${amount}</b>.\nCurrent Balance: <b>${new_bal}</b>", parse_mode="HTML")
-            except: pass
-        else:
-            bot.reply_to(message, "❌ Database Error.")
-    except ValueError:
-        bot.reply_to(message, "❌ Invalid format.")
-
-# ==========================================
-# 🛠️ PLAN MANAGEMENT (COMMANDS)
-# ==========================================
-@bot.message_handler(commands=['listplans'])
-def admin_list_plans(message: Message):
-    if message.from_user.id not in ADMIN_IDS: return
-    plans = get_all_plans()
-    if not plans: return bot.reply_to(message, "📭 No plans.")
-    text = "📋 <b>PLANS</b>\n" + "\n".join([f"• ${p[1]} -> ${p[2]}" for p in plans])
-    bot.reply_to(message, text, parse_mode="HTML")
+            bot.reply_to(message, f"✅ Added ${amount} to {target_id}")
+    except: pass
