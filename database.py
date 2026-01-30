@@ -17,92 +17,31 @@ def init_db():
             cur = conn.cursor()
             
             # 1. Users
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS otp_users (
-                    user_id BIGINT PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    subscription_end TIMESTAMP DEFAULT NULL,
-                    is_admin BOOLEAN DEFAULT FALSE,
-                    referred_by BIGINT,
-                    wallet_balance DECIMAL(10, 2) DEFAULT 0.00
-                );
-            """)
-            
+            cur.execute("""CREATE TABLE IF NOT EXISTS otp_users (user_id BIGINT PRIMARY KEY, username TEXT, first_name TEXT, last_name TEXT, joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, subscription_end TIMESTAMP DEFAULT NULL, is_admin BOOLEAN DEFAULT FALSE, referred_by BIGINT, wallet_balance DECIMAL(10, 2) DEFAULT 0.00);""")
             # 2. Licenses
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS otp_licenses (
-                    key_code TEXT PRIMARY KEY,
-                    duration_days INT NOT NULL,
-                    status TEXT DEFAULT 'active',
-                    used_by BIGINT,
-                    credits_amount DECIMAL(10, 2) DEFAULT 0.00,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-
-            # 3. User Scripts
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS otp_scripts (
-                    user_id BIGINT,
-                    service_name TEXT,
-                    language TEXT DEFAULT 'en-US',
-                    script_text TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, service_name)
-                );
-            """)
-
+            cur.execute("""CREATE TABLE IF NOT EXISTS otp_licenses (key_code TEXT PRIMARY KEY, duration_days INT NOT NULL, status TEXT DEFAULT 'active', used_by BIGINT, credits_amount DECIMAL(10, 2) DEFAULT 0.00, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""")
+            # 3. Scripts
+            cur.execute("""CREATE TABLE IF NOT EXISTS otp_scripts (user_id BIGINT, service_name TEXT, language TEXT DEFAULT 'en-US', script_text TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, service_name));""")
             # 4. Market
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS otp_market (
-                    id SERIAL PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    service_name TEXT NOT NULL,
-                    script_text TEXT NOT NULL,
-                    language TEXT DEFAULT 'en-US',
-                    price DECIMAL(10, 2) DEFAULT 0.00,
-                    is_premium BOOLEAN DEFAULT FALSE,
-                    author_id BIGINT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    payout_pref TEXT DEFAULT 'credits',
-                    payout_wallet TEXT DEFAULT NULL
-                );
-            """)
-
+            cur.execute("""CREATE TABLE IF NOT EXISTS otp_market (id SERIAL PRIMARY KEY, title TEXT NOT NULL, service_name TEXT NOT NULL, script_text TEXT NOT NULL, language TEXT DEFAULT 'en-US', price DECIMAL(10, 2) DEFAULT 0.00, is_premium BOOLEAN DEFAULT FALSE, author_id BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, payout_pref TEXT DEFAULT 'credits', payout_wallet TEXT DEFAULT NULL);""")
             # 5. Purchases
+            cur.execute("""CREATE TABLE IF NOT EXISTS otp_purchases (user_id BIGINT, script_id INT, purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, script_id));""")
+            # 6. Plans
+            cur.execute("""CREATE TABLE IF NOT EXISTS otp_plans (id SERIAL PRIMARY KEY, price DECIMAL(10, 2) NOT NULL UNIQUE, reward_balance DECIMAL(10, 2) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""")
+            
+            # 7. BOT SETTINGS (NUEVO)
+            # Guarda config global: maintenance_mode, maintenance_msg, changelog_text
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS otp_purchases (
-                    user_id BIGINT,
-                    script_id INT,
-                    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, script_id)
+                CREATE TABLE IF NOT EXISTS bot_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT
                 );
             """)
 
-            # 6. Payment Plans
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS otp_plans (
-                    id SERIAL PRIMARY KEY,
-                    price DECIMAL(10, 2) NOT NULL UNIQUE,
-                    reward_balance DECIMAL(10, 2) NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-            
-            # === AUTO-GENERAR PLANES DEFAULT SI ESTÁ VACÍO ===
+            # Default Plans Logic
             cur.execute("SELECT COUNT(*) FROM otp_plans")
             if cur.fetchone()[0] == 0:
-                print("⚠️ No plans found. Creating DEFAULT plans...")
-                default_plans = [
-                    (10.00, 10.00),  # $10 cuesta $10
-                    (25.00, 30.00),  # $25 te da $30 (Bonus)
-                    (50.00, 65.00)   # $50 te da $65 (Super Bonus)
-                ]
-                for p, r in default_plans:
-                    cur.execute("INSERT INTO otp_plans (price, reward_balance) VALUES (%s, %s)", (p, r))
+                cur.execute("INSERT INTO otp_plans (price, reward_balance) VALUES (10.00, 10.00), (25.00, 30.00), (50.00, 65.00)")
             
             conn.commit()
             cur.close()
@@ -111,14 +50,10 @@ def init_db():
         except Exception as e:
             print(f"🔴 Init DB Error: {e}")
 
-# ... (MANTÉN EL RESTO DE FUNCIONES IGUAL: get_user_balance, add_balance, etc.) ...
-# COPIA AQUÍ ABAJO TODAS LAS FUNCIONES QUE YA TENÍAS (get_available_services, manage_plan, create_license, etc.)
-# Para ahorrar espacio en el chat, asumo que las tienes del mensaje anterior.
-# Asegúrate de que `create_license` y `manage_plan` estén aquí.
+# ... (MANTÉN TUS FUNCIONES ANTIGUAS: get_user_balance, register_user, etc.) ...
+# ... (POR BREVEDAD, ASUMO QUE ESTÁN AQUÍ. NO LAS BORRES) ...
+# ... (Solo agrego las NUEVAS funciones abajo) ...
 
-# ==========================================
-# (RESUMEN DE FUNCIONES NECESARIAS AQUÍ ABAJO)
-# ==========================================
 def get_user_balance(user_id):
     if user_id in ADMIN_IDS: return 9999.00
     conn = get_connection()
@@ -368,3 +303,43 @@ def create_license(days):
         except Exception as e:
             print(f"Key Gen Error: {e}")
     return None
+
+# ==========================================
+# 🆕 SETTINGS & BROADCAST FUNCTIONS
+# ==========================================
+def get_setting(key):
+    conn = get_connection()
+    val = None
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT setting_value FROM bot_settings WHERE setting_key = %s", (key,))
+            res = cur.fetchone()
+            val = res[0] if res else None
+            conn.close()
+        except: pass
+    return val
+
+def set_setting(key, value):
+    conn = get_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO bot_settings (setting_key, setting_value) VALUES (%s, %s) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value", (key, value))
+            conn.commit()
+            conn.close()
+            return True
+        except: pass
+    return False
+
+def get_all_users_ids():
+    conn = get_connection()
+    ids = []
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM otp_users")
+            ids = [r[0] for r in cur.fetchall()]
+            conn.close()
+        except: pass
+    return ids
