@@ -1,6 +1,7 @@
 import os
 import secrets
 import platform
+from datetime import datetime
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from twilio.rest import Client
 from config import bot, ADMIN_IDS, TWILIO_SID, TWILIO_TOKEN
@@ -10,7 +11,7 @@ from handlers.payments import create_hoodpay_payment
 from handlers.profile import get_profile_content, show_referral
 
 # Versión del Sistema
-VERSION = "v3.8 (Extended Debugger)"
+VERSION = "v3.9 (Auto-Refresh Fix)"
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -40,7 +41,11 @@ def callback_query(call):
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟", callback_data="admin_panel"))
             
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+        try:
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+        except:
+            # Si falla al editar (ej: mensaje muy viejo), enviamos uno nuevo
+            bot.send_message(call.message.chat.id, text, reply_markup=markup)
 
     # ==========================================
     # 👤 PERFIL Y REFERIDOS
@@ -138,7 +143,7 @@ Join our channel for:
         try:
             client = Client(TWILIO_SID, TWILIO_TOKEN)
             
-            # 1. Obtener últimas 20 llamadas (CAMBIADO DE 5 A 20)
+            # 1. Obtener últimas 20 llamadas
             calls = client.calls.list(limit=20)
             calls_msg = ""
             
@@ -150,30 +155,27 @@ Join our channel for:
                     elif c.status in ['ringing', 'in-progress', 'queued']: icon = "📞"
                     else: icon = "❓"
                     
-                    # Safe check para 'to'
+                    # Safe checks
                     to_num = c.to[-4:] if c.to else "Unk"
-                    
-                    # Safe check para 'duration'
                     dur = c.duration if c.duration else "0"
                     
-                    # Formato compacto para que quepan 20
-                    # Ej: ✅ ...4280 | 12s
                     calls_msg += f"{icon} `...{to_num}` | {c.status} ({dur}s)\n"
             else:
                 calls_msg = "No recent calls found."
 
-            # 2. Obtener últimas 5 alertas (AUMENTADO DE 3 A 5)
-            # No ponemos 20 aquí porque las alertas tienen mucho texto y Telegram daría error.
+            # 2. Obtener últimas 5 alertas
             alerts = client.monitor.v1.alerts.list(limit=5)
             alerts_msg = ""
             
             if alerts:
                 for a in alerts:
                     txt = a.alert_text if a.alert_text else "No details"
-                    # Cortamos el texto a 40 caracteres para ahorrar espacio
                     alerts_msg += f"🔴 **Err {a.error_code}:** _{txt[:40]}..._\n"
             else:
                 alerts_msg = "✅ No recent critical errors."
+
+            # Agregamos HORA ACTUAL para forzar que el mensaje sea distinto siempre
+            now_str = datetime.now().strftime("%H:%M:%S")
 
             full_msg = f"""
 🐞 **TWILIO DEBUGGER (Last 20)**
@@ -183,6 +185,8 @@ Join our channel for:
 
 ⚠️ **Recent Alerts (Last 5):**
 {alerts_msg}
+
+_Last Update: {now_str}_
             """
             
             markup = InlineKeyboardMarkup()
@@ -192,9 +196,13 @@ Join our channel for:
             bot.edit_message_text(full_msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
         except Exception as e:
-            import traceback
-            print(traceback.format_exc()) 
-            bot.edit_message_text(f"❌ Error fetching logs: {e}", call.message.chat.id, call.message.message_id)
+            # Si el error es "message is not modified", lo ignoramos elegante
+            if "message is not modified" in str(e):
+                bot.answer_callback_query(call.id, "✅ Already up to date!")
+            else:
+                import traceback
+                print(traceback.format_exc()) 
+                bot.edit_message_text(f"❌ Error fetching logs: {e}", call.message.chat.id, call.message.message_id)
 
     # ==========================================
     # 📜 ADMIN BOT LOGS (ARCHIVO LOCAL)
@@ -207,15 +215,24 @@ Join our channel for:
                 with open("bot.log", "r") as f:
                     lines = f.readlines()
                     last_lines = "".join(lines[-15:]) # Últimas 15 líneas
-                log_text = f"📜 **SYSTEM LOGS:**\n\n```\n{last_lines}```"
+                
+                # Agregamos hora para evitar error de "not modified"
+                now_str = datetime.now().strftime("%H:%M:%S")
+                log_text = f"📜 **SYSTEM LOGS:**\n\n```\n{last_lines}```\n_Refreshed: {now_str}_"
             else:
                 log_text = "⚠️ **Log file not found.**"
 
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🔄 Refresh", callback_data="show_log"))
             markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
+            
             bot.edit_message_text(log_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except: pass
+            
+        except Exception as e:
+            if "message is not modified" in str(e):
+                bot.answer_callback_query(call.id, "✅ Logs up to date!")
+            else:
+                pass
 
     # ==========================================
     # ℹ️ SYSTEM INFO / VERSION
