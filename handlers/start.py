@@ -66,38 +66,45 @@ Select an option below:
     """
 
     # ==========================================
-    # 3. DISEÑO DE BOTONES (CORREGIDO)
+    # 3. DISEÑO DE BOTONES (ACTUALIZADO)
     # ==========================================
     markup = InlineKeyboardMarkup()
     
-    # 1. DASHBOARD (ANCHO COMPLETO - PROTAGONISTA)
+    # 1. DASHBOARD (PRINCIPAL)
     markup.add(InlineKeyboardButton("⚡ ＤＡＳＨＢＯＡＲＤ", callback_data="open_dashboard"))
 
-    # 2. REJILLA DE OPCIONES (2 COLUMNAS)
+    # 2. FILA: MARKET Y PERFIL
     markup.row(
         InlineKeyboardButton("🛒 Market", callback_data="market_home"),
         InlineKeyboardButton("👤 Profile", callback_data="show_profile")
     )
+
+    # 3. FILA: DEPOSITOS Y KEYS
     markup.row(
         InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"),
         InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key")
     )
+    
+    # 4. FILA: COMMANDS Y FEATURES (NUEVO)
     markup.row(
-        InlineKeyboardButton("👥 Referral", callback_data="referral"),
+        InlineKeyboardButton("🤖 Commands", callback_data="commands"),
         InlineKeyboardButton("🛠️ Features", callback_data="features")
     )
+
+    # 5. FILA: REFERIDOS Y SOPORTE
+    markup.row(
+        InlineKeyboardButton("👥 Referral", callback_data="referral"),
+        InlineKeyboardButton("⛑️ Support", callback_data="support")
+    )
     
-    # 3. EXTRAS Y SOPORTE
-    markup.add(InlineKeyboardButton("⛑️ Support", callback_data="support"))
-    
-    # 4. ADMIN PANEL (ANCHO COMPLETO - SOLO ADMINS)
+    # 6. ADMIN PANEL (SOLO ADMINS)
     if user.id in ADMIN_IDS:
         markup.add(InlineKeyboardButton("🕴️ ＡＤＭＩＮ  ＰＡＮＥＬ", callback_data="admin_panel"))
 
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
 
 # ==========================================
-# 4. HANDLER DE SOPORTE (COPYRIGHT ACTUALIZADO)
+# 4. HANDLER DE SOPORTE
 # ==========================================
 @bot.callback_query_handler(func=lambda call: call.data == "support")
 def support_handler(call):
