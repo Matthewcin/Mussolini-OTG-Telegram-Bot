@@ -12,24 +12,75 @@ from handlers.admin import check_twilio_status
 def callback_query(call):
     user_id = call.from_user.id
     
+    # Filtros
     if call.data.startswith("live_") or call.data.startswith("wiz_") and not call.data in ["wiz_call", "wiz_sms", "wiz_addbal", "wiz_genkey", "wiz_addplan", "wiz_delplan", "wiz_changelog", "wiz_maint_toggle"] and not call.data.startswith("wiz_cast_"): 
         return
     if call.data.startswith("gkey_"): return
 
-    # BACK HOME
+    # ==========================================
+    # 🔙 BACK HOME (Actualizado con Features/Commands)
+    # ==========================================
     if call.data == "back_home":
         text = f"🛡️ <b>MUSSOLINI OTP BOT v31</b>\n━━━━━━━━━━━━━━━━━━━━\nHello, <b>{call.from_user.first_name}</b>."
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("⚡ ＤＡＳＨＢＯＡＲＤ", callback_data="open_dashboard"))
         markup.row(InlineKeyboardButton("🛒 Market", callback_data="market_home"), InlineKeyboardButton("👤 Profile", callback_data="show_profile"))
         markup.row(InlineKeyboardButton("🪙 Deposit", callback_data="buy_subs"), InlineKeyboardButton("🎟️ Redeem Key", callback_data="enter_key"))
+        
+        # NUEVOS BOTONES
+        markup.row(InlineKeyboardButton("🤖 Commands", callback_data="commands"), InlineKeyboardButton("🛠️ Features", callback_data="features"))
+        
         markup.row(InlineKeyboardButton("👥 Referral", callback_data="referral"), InlineKeyboardButton("⛑️ Support", callback_data="support"))
+        
         if user_id in ADMIN_IDS:
             markup.add(InlineKeyboardButton("🕴️ ＡＤＭＩＮ  ＰＡＮＥＬ", callback_data="admin_panel"))
         try: bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
         except: bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
-    # DASHBOARD
+    # ==========================================
+    # 🤖 COMMANDS LIST
+    # ==========================================
+    elif call.data == "commands":
+        text = (
+            "🤖 <b>COMMAND LIST</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "<b>User Commands:</b>\n"
+            "• /start - Main Menu\n"
+            "• /call [Number] [Service] - Start Call\n"
+            "• /sms [Number] [Service] - Send SMS\n"
+            "• /myid - Show your Telegram ID\n"
+            "• /changelog - View updates\n\n"
+            "<b>Admin Commands:</b>\n"
+            "• /addbalance [ID] [Amount]\n"
+            "• /twilio - Check API status"
+        )
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
+    # ==========================================
+    # 🛠️ FEATURES LIST
+    # ==========================================
+    elif call.data == "features":
+        text = (
+            "🛠️ <b>BOT FEATURES</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "✅ <b>OTP Intercept:</b> Capture codes in real-time.\n"
+            "✅ <b>PGP/DTMF:</b> High quality bypass scripts.\n"
+            "✅ <b>Script Market:</b> Buy/Sell custom scripts.\n"
+            "✅ <b>Referral System:</b> Earn money inviting users.\n"
+            "✅ <b>Crypto Payments:</b> Automatic deposits.\n"
+            "✅ <b>Twilio Integration:</b> Stable calling routes."
+        )
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+
+    # ... (MANTÉN TODO EL RESTO DEL ARCHIVO IGUAL: DASHBOARD, ADMIN, DEPOSIT, ETC.) ...
+    # COPIA Y PEGA EL RESTO DE TU CALLBACKS.PY AQUÍ ABAJO
+    # (Dashboard, Admin Panel, Payments, Market, etc.)
+    
+    # --- DASHBOARD ---
     elif call.data == "open_dashboard":
         text = "⚡ <b>ＤＡＳＨＢＯＡＲＤ</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect tool:"
         markup = InlineKeyboardMarkup()
@@ -38,12 +89,11 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # ADMIN PANEL
+    # --- ADMIN PANEL ---
     elif call.data == "admin_panel":
         if user_id in ADMIN_IDS:
             m_status = get_setting("maintenance_mode") or "OFF"
             m_icon = "🔴" if m_status == "OFF" else "🟢"
-            
             text = f"🕴️ <b>ＡＤＭＩＮ</b>\n━━━━━━━━━━━━━━━━━━━━\n🛠 <b>Maint Mode:</b> {m_status}\nSelect tool:"
             markup = InlineKeyboardMarkup()
             markup.row(InlineKeyboardButton("💰 Add Bal", callback_data="wiz_addbal"), InlineKeyboardButton("🎟️ Gen Key", callback_data="wiz_genkey"))
@@ -54,7 +104,7 @@ def callback_query(call):
             markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
             bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # BROADCAST MENU
+    # --- BROADCAST ---
     elif call.data == "adm_cast_menu":
         text = "📢 <b>BROADCAST MENU</b>\nSelect message type:"
         markup = InlineKeyboardMarkup()
@@ -64,7 +114,7 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # TWILIO
+    # --- TWILIO & LOGS ---
     elif call.data == "adm_twilio":
         bot.answer_callback_query(call.id, "⏳ Connecting...")
         success, bal, stat, nums = check_twilio_status()
@@ -73,7 +123,6 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # LOGS
     elif call.data == "show_log":
         try:
             with open("bot.log", "r") as f: lines = f.readlines()[-20:]
@@ -84,7 +133,7 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="admin_panel"))
         bot.edit_message_text(f"📜 <b>LOGS:</b>\n<pre>{log_text}</pre>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # DEPOSIT
+    # --- DEPOSIT (PAYMENTS) ---
     elif call.data == "buy_subs":
         plans = get_all_plans()
         text = "🪙 <b>DEPOSIT</b>\nChoose plan:" if plans else "No plans."
@@ -93,7 +142,6 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="back_home"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # PLAN BUY
     elif call.data.startswith("plan_buy_"):
         plan_id = int(call.data.split("_")[2])
         create_dynamic_plan_invoice(user_id, plan_id)
@@ -110,7 +158,7 @@ def callback_query(call):
                 bot.edit_message_text(f"✅ <b>SUCCESS!</b>\nAdded ${reward}", call.message.chat.id, call.message.message_id, parse_mode="HTML")
         else: bot.answer_callback_query(call.id, "⏳ Waiting...", show_alert=True)
 
-    # MARKET
+    # --- MARKET ---
     elif call.data == "market_home":
         text = "🛒 <b>MARKET</b>"
         markup = InlineKeyboardMarkup()
@@ -147,7 +195,7 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("⬅ Back", callback_data="market_home"))
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
 
-    # PROFILE/KEY/SUPPORT
+    # --- OTHER FEATURES ---
     elif call.data == "show_profile":
         text, markup = get_profile_content(user_id, call.from_user.first_name)
         if text: bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
@@ -165,3 +213,56 @@ def callback_query(call):
         text = "⛑️ **SUPPORT**\n━━━━━━━━━━━━━━━━\nContact Admin: @Mussolini860\n━━━━━━━━━━━━━━━━\nContact Developer for Issues\n🦠 @whois_tyler (VirusNTO)"
         bot.answer_callback_query(call.id, "Support contact sent.")
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+
+    # --- WIZARD TRIGGERS ---
+    elif call.data == "wiz_call":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        start_call_wizard(call.message)
+    elif call.data == "wiz_sms":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        start_sms_wizard(call.message)
+    elif call.data == "wiz_addbal":
+        if user_id in ADMIN_IDS:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            start_balance_wizard(call.message)
+    
+    # --- BUY SCRIPT HANDLERS ---
+    elif call.data.startswith("buy_cred_"):
+        sid = int(call.data.split("_")[2])
+        # process_purchase se importa de callbacks pero aqui está definida abajo
+        process_purchase(call.message, user_id, sid, "credits")
+
+    elif call.data.startswith("buy_cryp_"):
+        sid = int(call.data.split("_")[2])
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT title, price FROM otp_market WHERE id=%s", (sid,))
+        res = cur.fetchone()
+        conn.close()
+        if res: create_script_invoice(user_id, sid, res[1], res[0])
+
+    elif call.data.startswith("chk_scr_"):
+        parts = call.data.split("_")
+        pay_id, sid = parts[2], int(parts[3])
+        if check_payment_status(pay_id): process_purchase(call.message, user_id, sid, "crypto")
+        else: bot.answer_callback_query(call.id, "⏳ Waiting for payment...", show_alert=True)
+
+def process_purchase(message, buyer_id, script_id, method):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT service_name, language, script_text, title, price, author_id, payout_pref FROM otp_market WHERE id = %s", (script_id,))
+    data = cur.fetchone()
+    if data:
+        service, lang, text, title, price, author, pref = data
+        price = float(price)
+        if method == "credits":
+            if not deduct_balance(buyer_id, price):
+                conn.close()
+                return bot.send_message(buyer_id, "💸 Insufficient Credits.")
+        cur.execute("INSERT INTO otp_purchases (user_id, script_id) VALUES (%s, %s)", (buyer_id, script_id))
+        save_user_script(buyer_id, service, lang, text)
+        comm = price * 0.60
+        if pref == "credits": add_balance(author, comm)
+        conn.commit()
+        bot.send_message(buyer_id, f"✅ Bought <b>{title}</b>", parse_mode="HTML")
+    conn.close()
